@@ -16,19 +16,32 @@ import dask
 import phippery
 from phippery.tidy import tidy_ds
 
-st.write("EXECUTED FROM TOP")
+
 
 @st.cache(allow_output_mutation=True)
-def get_sample_queries():
-    return []
+def get_queries():
+    return pd.DataFrame({
+        "qkey": [],
+        "Query Type":[], 
+        "Condition": []
+    }).set_index("qkey")
 
-if 'already_subset_flag' not in st.session_state:
-    st.session_state.already_subset_flag = 0 
-    st.write('first_exec')
-else:
-    st.session_state.already_subset_flag += 1
-    st.write(f'exec # {st.session_state.already_subset_flag}')
-    st.write(f"sample_queries: {get_sample_queries()}")
+
+def add_query_condition(*args, **kwargs):
+
+    st.session_state.query_key_index += 1
+    get_queries().loc[args[0]] = [args[1], st.session_state[args[0]]]
+
+
+def drop_query_condition(*args, **kwargs):
+
+    st.session_state.drop_query_key_index += 1
+    to_drop = st.session_state[args[0]]
+    existing_keys = get_queries().index.values
+    if to_drop not in existing_keys:
+        st.warning(f'{to_drop} does not exist with any of the condition keys, non-operation. Existing Keys include: {existing_keys}')
+    else:
+        get_queries().drop(to_drop, axis=0, inplace=True)
 
 
 # TODO Docstrings
@@ -36,17 +49,16 @@ else:
 def load_data(input_file_path: str, **kwargs):
 
     # no queries exist
-    if len(get_sample_queries()) == 0:
+    if len(get_queries()) == 0:
         ds = phippery.load(input_file_path)
         return ds
-        #return ds.loc[dict(
-        #    sample_id=st.session_state.sample_id,
-        #    peptide_id=st.session_state.peptide_id
-        #)]
 
     else:
         ds = phippery.load(input_file_path)
-        st.write(f"using sample queries: {get_sample_queries()}")
+
+        # Call phippery.get_index_from_queries
+
+        st.write(f"using sample queries: {get_queries()}")
         return ds
         # TODO actually query
         #return ds.loc[dict(
@@ -111,28 +123,6 @@ st.sidebar.title('PhIPseq Viz')
 #expander = st.expander("FAQ")
 #expander.write("Here you could put in some really, really long explanations...")
 
-unique_types = ["Heatmap"]
-selected_types = st.sidebar.multiselect(
-    "Types",
-    unique_types,
-    default=unique_types
-)
-
-def update_sample_query(*args, **kwargs):
-    get_sample_queries().append(st.session_state[args[0]])
-
-
-with st.sidebar.expander('Sample Query Condtions'):
-    st.write(f"{get_sample_queries()}")
-
-    num_queries = len(get_sample_queries())
-    inp = st.text_input(
-        label=f"Condition: {num_queries+1}", 
-        key=f"sq_{num_queries+1}", 
-        on_change=update_sample_query,
-        args=tuple([f"sq_{num_queries+1}"])
-    )
-
 # SELECT WHICH FILE TO VIEW
 input_file_list = [
     f"_data/{fp}" for fp in os.listdir("_data/")
@@ -143,11 +133,52 @@ selected_input_file = st.sidebar.selectbox(
     input_file_list
 )
 
+
+with st.sidebar.expander('Sample & Peptide Selection Condtions'):
+    st.dataframe(get_queries())
+    #st.table(get_queries())
+
+    qtype = st.selectbox('query type', ["sample", "peptide"])
+
+    if 'query_key_index' not in st.session_state:
+        st.session_state.query_key_index = 0 
+    num_queries = st.session_state.query_key_index
+
+
+    if 'drop_query_key_index' not in st.session_state:
+        st.session_state.drop_query_key_index = 0 
+    num_dropped_queries = st.session_state.drop_query_key_index
+
+    # Add Query
+    st.text_input(
+        label=f"Condition: {num_queries+1}", 
+        key=f"sq_{num_queries+1}", 
+        on_change=add_query_condition,
+        args=tuple([f"sq_{num_queries+1}", qtype])
+    )
+
+    # Remove Query
+    st.text_input(
+        label=f"Remove Condition (by key)", 
+        key=f"rm_key_{num_dropped_queries}", 
+        on_change=drop_query_condition,
+        args=tuple([f"rm_key_{num_dropped_queries}"])
+    )
+
+# Load data (cached if no change)
 ds = load_data(selected_input_file)
-    
+
 ##################################################
 # Data
 ##################################################
+
+unique_types = ["Heatmap"]
+selected_types = st.sidebar.multiselect(
+    "Types",
+    unique_types,
+    default=unique_types
+)
+
 if "Heatmap" in selected_types:
 
     with st.form("dt"):
@@ -168,7 +199,6 @@ if "Heatmap" in selected_types:
             "Normalization layer",
             enrichment_options
         )
-        #to_drop = set(enrichment_options) - set([enrichment])
         
         window_size_options = list(range(1, len(ds.peptide_id.values)))
         window_size = st.selectbox(
@@ -182,12 +212,6 @@ if "Heatmap" in selected_types:
             agg_choices
         )
         
-        #print(agg_samples)
-
-####    ##############################################
-# Ae    st.sidebar.
-####    ##############################################
-
         agg_samples, enrichment_columns = compute_intervals(
             ds, 
             enrichment,
