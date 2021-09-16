@@ -22,49 +22,37 @@ from phippery.tidy import tidy_ds
 def get_queries():
     return pd.DataFrame({
         "qkey": [],
-        "Query Type":[], 
+        "Type":[], 
         "Condition": []
     }).set_index("qkey")
 
 
-def add_query_condition(*args, **kwargs):
-
-    st.session_state.query_key_index += 1
-    get_queries().loc[args[0]] = [args[1], st.session_state[args[0]]]
-
-
-def drop_query_condition(*args, **kwargs):
-
-    st.session_state.drop_query_key_index += 1
-    to_drop = st.session_state[args[0]]
-    existing_keys = get_queries().index.values
-    if to_drop not in existing_keys:
-        st.warning(f'{to_drop} does not exist with any of the condition keys, non-operation. Existing Keys include: {existing_keys}')
-    else:
-        get_queries().drop(to_drop, axis=0, inplace=True)
-
 
 # TODO Docstrings
 @st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
-def load_data(input_file_path: str, **kwargs):
+def load_data(input_file_path: str, df, **kwargs):
 
     # no queries exist
-    if len(get_queries()) == 0:
-        ds = phippery.load(input_file_path)
-        return ds
+    #if len(get_queries()) == 0:
+    #    print("No Queries found: ")
+    #    print(get_queries())
+    #    ds = phippery.load(input_file_path)
+    #    return ds
 
-    else:
-        ds = phippery.load(input_file_path)
+    #else:
+    print(f"in_load")
+    print(df)
+    ds = phippery.load(input_file_path)
+    sid, pid = phippery.id_coordinate_from_query(ds, df)
+    # Call phippery.get_index_from_queries
 
-        # Call phippery.get_index_from_queries
-
-        st.write(f"using sample queries: {get_queries()}")
-        return ds
-        # TODO actually query
-        #return ds.loc[dict(
-        #    sample_id=st.session_state.sample_id,
-        #    peptide_id=st.session_state.peptide_id
-        #)]
+    st.write(f"using sample queries: {df}")
+    #return ds
+    # TODO actually query
+    return ds.loc[dict(
+        sample_id=sid,
+        peptide_id=pid
+    )]
 
 
 @st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
@@ -133,9 +121,26 @@ selected_input_file = st.sidebar.selectbox(
     input_file_list
 )
 
+def add_query_condition(*args, **kwargs):
+
+    st.session_state.query_key_index += 1
+    get_queries().loc[args[0]] = [args[1], st.session_state[args[0]]]
+
+
+def drop_query_condition(*args, **kwargs):
+
+    st.session_state.drop_query_key_index += 1
+    to_drop = st.session_state[args[0]]
+    existing_keys = get_queries().index.values
+    if to_drop not in existing_keys:
+        st.warning(f'{to_drop} does not exist with any of the condition keys, non-operation. Existing Keys include: {existing_keys}')
+    else:
+        get_queries().drop(to_drop, axis=0, inplace=True)
+
 
 with st.sidebar.expander('Sample & Peptide Selection Condtions'):
     st.dataframe(get_queries())
+    #print(get_queries())
     #st.table(get_queries())
 
     qtype = st.selectbox('query type', ["sample", "peptide"])
@@ -143,7 +148,6 @@ with st.sidebar.expander('Sample & Peptide Selection Condtions'):
     if 'query_key_index' not in st.session_state:
         st.session_state.query_key_index = 0 
     num_queries = st.session_state.query_key_index
-
 
     if 'drop_query_key_index' not in st.session_state:
         st.session_state.drop_query_key_index = 0 
@@ -166,7 +170,7 @@ with st.sidebar.expander('Sample & Peptide Selection Condtions'):
     )
 
 # Load data (cached if no change)
-ds = load_data(selected_input_file)
+ds = load_data(selected_input_file, get_queries())
 
 ##################################################
 # Data
