@@ -19,43 +19,36 @@ import phippery
 from phippery.tidy import tidy_ds
 
 
+st.set_page_config(layout='wide')
+
 if 'query_key_index' not in st.session_state:
     st.session_state.query_key_index = 0 
 
 if 'drop_query_key_index' not in st.session_state:
     st.session_state.drop_query_key_index = 0 
 
-# TODO Docstrings
-#@st.cache(allow_output_mutation=True, suppress_st_warning=True)
-#def get_queries():
-#    return 
-#HERE#
+if 'view_annotations' not in st.session_state:
+    st.session_state.view_samples = False
+
+
 if 'queries' not in st.session_state:
-    st.session_state['queries'] = st.table(pd.DataFrame({
+    st.session_state['queries'] = pd.DataFrame({
             "qkey": [],
             "Type":[], 
             "Condition": []
-        }).set_index("qkey"))
-#st.write(st.session_state)
+        }).set_index("qkey")
 
-# it could be all the new text input button keys
-# it could be sample peptide direct input 
 
 @st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
-def load_data(input_file_path: str, sample_ids, peptide_ids, **kwargs):
+def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
     st.write("Cache miss")
 
     ds = phippery.load(input_file_path)
-    # TODO Try, Catch Throw Informative Error
-    #try:
+    sid, pid = phippery.id_coordinate_from_query(ds, df)
     return ds.loc[dict(
         sample_id=sid,
         peptide_id=pid
     )]
-    #except pd.core.computation.ops.UndefinedVariableError as e:
-    #    print(e)
-    #    return ds
-
 
 
 @st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
@@ -105,6 +98,7 @@ def compute_intervals(
     
     return (agg_samples, enrichment_columns)
 
+ph = st.sidebar.empty()
 # TITLE OF THE APP
 # TODO decorate
 st.sidebar.title('PhIPseq Viz')
@@ -124,72 +118,57 @@ selected_input_file = st.sidebar.selectbox(
     input_file_list
 )
 
-ph = st.empty()
 
 def add_query_condition(*args, **kwargs):
 
+    st.session_state.query_key_index += 1
     try:
-        #sid, pid = phippery.id_coordinate_from_query(ds, df)
-        #return ds.loc[dict(
-        #    sample_id=sid,
-        #    peptide_id=pid
-        #)]
-        ds.sample_table.to_pandas().query(st.session_state[args[0]])
-        st.session_state.query_key_index += 1
-        get_queries().loc[args[0]] = [args[1], st.session_state[args[0]]]
-    except Exception as e:
-        ph.text(f"{e}")
+        if args[1] == 'sample':
+            l = st.session_state.sample_table.query(st.session_state[args[0]])
+        else:
+            l = st.session_state.peptide_table.query(st.session_state[args[0]])
+        if len(l) == 0:
+            raise ValueError(f'Zero-length Array')
 
-        #st.sidebar.warning(f"{e}")
-        #except pd.core.computation.ops.UndefinedVariableError as e:
-        #    st.warning(f"{e}")
+    except Exception as e:
+        st.warning(f"Error: '{e}' -- Condition not applied")
+        return
+
+    st.session_state.queries.loc[args[0]] = [args[1], st.session_state[args[0]]]
 
 
 def drop_query_condition(*args, **kwargs):
 
     st.session_state.drop_query_key_index += 1
     to_drop = st.session_state[args[0]]
-    existing_keys = get_queries().index.values
+    existing_keys = st.session_state.queries.index.values
     if to_drop not in existing_keys:
         st.warning(f'{to_drop} does not exist with any of the condition keys, non-operation. Existing Keys include: {existing_keys}')
     else:
-        get_queries().drop(to_drop, axis=0, inplace=True)
-
-
-#with st.sidebar.expander('Sample & Peptide Selection Condtions'):
-#print(get_queries())
-#st.table(get_queries())
-#if "clicked_query_type_flag" not in st.session_state:
-#    st.session_state.clicked_query_type_flag = False
-#def query_type_flag_fn():
-#    st.session_state.clicked_query_type_flag = True
+        st.session_state.queries.drop(to_drop, axis=0, inplace=True)
 
 qtype = st.sidebar.selectbox(
         'query type', 
         ["sample", "peptide"],
-        #on_change = query_type_flag_fn
 )
-#st.write(st.session_state.clicked_query_type_flag)
 
 
-#if 'query_key_index' not in st.session_state:
-#    st.session_state.query_key_index = 0
 num_queries = st.session_state.query_key_index
 
-#if 'drop_query_key_index' not in st.session_state:
-#    st.session_state.drop_query_key_index = 0
+
 num_dropped_queries = st.session_state.drop_query_key_index
 
 # Add Query
-warn_query_placeholder = st.empty()
 st.sidebar.text_input(
-    label=f"Condition: {num_queries+1}",
-    key=f"sq_{num_queries+1}",
+    label=f"Query Condition",
+    key=f"q{num_queries+1}",
     on_change=add_query_condition,
-    args=tuple([f"sq_{num_queries+1}", qtype])
+    args=tuple([f"q{num_queries+1}", qtype])
 )
 
-st.sidebar.dataframe(get_queries())
+
+st.sidebar.dataframe(st.session_state.queries)
+
 # Remove Query
 st.sidebar.text_input(
     label=f"Remove Condition (by key)",
@@ -199,11 +178,14 @@ st.sidebar.text_input(
 )
 
 
-#sid, pid = phippery.id_coordinate_from_query(ds, df)
-
 # Load data (cached if no change)
+df = copy.deepcopy(st.session_state.queries)
+ds = load_data(selected_input_file, df)
 
-ds = load_data(selected_input_file, get_queries())
+#if 'sample_table' not in st.session_state:
+st.session_state['sample_table'] = copy.deepcopy(ds.sample_table.to_pandas())
+st.session_state['peptide_table'] = copy.deepcopy(ds.peptide_table.to_pandas())
+
 
 unique_types = ["Heatmap"]
 selected_types = st.sidebar.multiselect(
@@ -213,6 +195,10 @@ selected_types = st.sidebar.multiselect(
 )
 
 
+with st.expander('Sample Table', expanded=False):
+    st.write(st.session_state.sample_table)
+    st.write('Juicy deets')
+
 #if "Heatmap" in selected_types and not st.session_state.clicked_query_type_flag:
 if "Heatmap" in selected_types: 
 
@@ -221,15 +207,11 @@ if "Heatmap" in selected_types:
         with st.form("dt"):
             st.write(f"Transform Data")
 
-            #@st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
-            #def get_valid_enr(ds):
             enrichment_options = []
             for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
                 if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
                     enrichment_options.append(dt)
-            #    return enrichment_options
-            
-            enrichment_options = get_valid_enr(ds)
+
             enrichment = st.selectbox(
                 "Normalization layer",
                 enrichment_options
