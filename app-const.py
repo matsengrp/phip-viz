@@ -17,6 +17,7 @@ import numpy as np
 import dask
 import phippery
 from phippery.tidy import tidy_ds
+import json
 
 
 st.set_page_config(layout='wide')
@@ -30,6 +31,9 @@ if 'drop_query_key_index' not in st.session_state:
 if 'view_annotations' not in st.session_state:
     st.session_state.view_samples = False
 
+if 'config' not in st.session_state:
+    config = json.load(open("config.json", "r"))
+    st.session_state.config = config
 
 if 'queries' not in st.session_state:
     st.session_state['queries'] = pd.DataFrame({
@@ -37,6 +41,7 @@ if 'queries' not in st.session_state:
             "Type":[], 
             "Condition": []
         }).set_index("qkey")
+
 
 
 @st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
@@ -56,7 +61,8 @@ def compute_intervals(
     ds, 
     enrichment,
     window_size,
-    aff_func, 
+    agg_func,
+    loc_feature
 ):
 
     my_bar = st.progress(0)
@@ -68,12 +74,14 @@ def compute_intervals(
     p_table["Loc"] = p_table["Loc"].astype(int) 
     
     # Sum up the enrichments within windows
-    windows = list(range(0, max(p_table["Loc"]), window_size))
+    windows = list(range(min(p_table["Loc"]), max(p_table["Loc"]), window_size))
     enrichment_columns = []
     aggregated_enrichment = {}
 
     # TODO I'm sure there's a better way to vectorize.
     # but I kinda like the progress bar
+
+    # TODO is this really the best way to compute windows??
     for l in range(len(windows)-1):
         start = windows[l]
         end = windows[l+1]
@@ -183,8 +191,12 @@ df = copy.deepcopy(st.session_state.queries)
 ds = load_data(selected_input_file, df)
 
 #if 'sample_table' not in st.session_state:
-st.session_state['sample_table'] = copy.deepcopy(ds.sample_table.to_pandas())
-st.session_state['peptide_table'] = copy.deepcopy(ds.peptide_table.to_pandas())
+st.session_state['sample_table'] = copy.deepcopy(
+        ds.sample_table.to_pandas().infer_objects()
+)
+st.session_state['peptide_table'] = copy.deepcopy(
+        ds.peptide_table.to_pandas().infer_objects()
+)
 
 
 unique_types = ["Heatmap"]
@@ -199,134 +211,159 @@ with st.expander('Sample Table', expanded=False):
     st.write(st.session_state.sample_table)
     st.write('Juicy deets')
 
+with st.expander('Peptide Table', expanded=False):
+    st.write(st.session_state.peptide_table)
+    st.write('Juicy deets')
+
 #if "Heatmap" in selected_types and not st.session_state.clicked_query_type_flag:
 if "Heatmap" in selected_types: 
 
-    #with left_column:
-    with st.expander('Heatmap Settings', expanded=True):
-        with st.form("dt"):
-            st.write(f"Transform Data")
+    left_column, right_column = st.columns(2)
 
-            enrichment_options = []
-            for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
-                if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
-                    enrichment_options.append(dt)
+    with left_column:
+        with st.expander('Heatmap Settings', expanded=True):
+            with st.form("dt"):
+                st.write(f"Transform Data")
 
-            enrichment = st.selectbox(
-                "Normalization layer",
-                enrichment_options
-            )
+                enrichment_options = []
+                for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
+                    if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
+                        enrichment_options.append(dt)
+
+                enrichment = st.selectbox(
+                    "Normalization layer",
+                    enrichment_options
+                )
+                
+                window_size_options = list(range(1, len(ds.peptide_id.values)))
+                window_size = st.selectbox(
+                    "Peptide Window Size",
+                    window_size_options
+                )
+                
+                agg_choices = ['sum', 'median', 'mean']
+                agg_func = st.selectbox(
+                    "Window Aggregation Function",
+                    agg_choices
+                )
+
             
-            window_size_options = list(range(1, len(ds.peptide_id.values)))
-            window_size = st.selectbox(
-                "Peptide Window Size",
-                window_size_options
-            )
-            
-            agg_choices = ['sum', 'median', 'mean']
-            agg_func = st.selectbox(
-                "Window Aggregation Function",
-                agg_choices
-            )
-            
-            agg_samples, enrichment_columns = compute_intervals(
-                ds, 
-                enrichment,
-                window_size,
-                agg_func
-            )
+                # TODO Make true checks
+                # random thought - this could be something like virus??
+                types = st.session_state.peptide_table.dtypes
+                int_columns = types[types==np.int64].index.values
+                default_loc = st.session_state.config["Locus"]
 
-            # How to group the samples
-            sample_groupby_choices = list(ds.sample_metadata.values)
-            sample_groupby = st.selectbox(
-                "Sample Order By",
-                ["Unordered"] + sample_groupby_choices,
-                index=0
-            )
+                if default_loc not in int_columns:
+                    st.warning(f"At least one integer peptide feature which specifies the peptide location information is required for PhIP-Viz. Currently, config.json tells us that feature is named '{default_loc}', but does not exist in the peptide table. Be sure to select from the list of valid Loc features below. For more on what defines a locus feature, see: TODO")
 
+                print(types)
+                print(int_columns)
+                print(default_loc)
+                loc_feature = st.selectbox(
+                    "Loc",
+                    int_columns,
+                    index = int(np.where(int_columns==default_loc)[0][0])
+                )
+                
+                agg_samples, enrichment_columns = compute_intervals(
+                    ds, 
+                    enrichment,
+                    window_size,
+                    agg_func,
+                    loc_feature
+                )
+
+                # How to group the samples
+                sample_groupby_choices = list(ds.sample_metadata.values)
+                sample_groupby = st.selectbox(
+                    "Sample Order By",
+                    ["Unordered"] + sample_groupby_choices,
+                    index=0
+                )
+
+
+                if sample_groupby != "Unordered":
+                    sample_order = []
+                    for g, g_df in agg_samples.groupby(
+                            [sample_groupby]
+                            ):
+                        sample_order.extend(g_df.index)    
+                    assert len(sample_order) == len(agg_samples)
+                    agg_samples = agg_samples.reindex(sample_order)
+
+                ## Range of values to viz
+                s_e = copy.deepcopy(agg_samples[enrichment_columns])
+
+                a = int(s_e.values.flatten().min())
+                b = int(s_e.values.flatten().max())
+                values = st.slider(
+                    "Min Max Enrichment",
+                    a,
+                    b,
+                    (a,b)
+                )
+                s_e[s_e < values[0]] = values[0]
+                s_e[s_e > values[1]] = values[1]
+
+                # Colormap
+                heatcolormap_choices = [
+                        "RdPu",
+                        "bwr",
+                        "bone",
+                        "pink"
+                
+                ]
+                heatcolormap = st.selectbox(
+                    "Colormap",
+                    heatcolormap_choices,
+                    0
+                )
+                hcmap = getattr(cm, heatcolormap)
+
+                norm = st.selectbox(
+                    "Color Scale",
+                    ["Log", "Linear"],
+                    0
+                )
+
+                submitted = st.form_submit_button("Submit")
+
+        with right_column:
+
+            fig, ax = plt.subplots(figsize=[8, 8])
+            cbar_kws = dict(use_gridspec=False, location="right", label=enrichment)
+            sns.heatmap(
+                    s_e, 
+                    ax = ax, 
+                    cmap=hcmap, 
+                    cbar_kws=cbar_kws, 
+                    norm=LogNorm() if norm=="Log" else None
+            )
 
             if sample_groupby != "Unordered":
-                sample_order = []
-                for g, g_df in agg_samples.groupby(
-                        [sample_groupby]
-                        ):
-                    sample_order.extend(g_df.index)    
-                assert len(sample_order) == len(agg_samples)
-                agg_samples = agg_samples.reindex(sample_order)
 
-            ## Range of values to viz
-            s_e = copy.deepcopy(agg_samples[enrichment_columns])
+                base=0
+                for g, g_df in agg_samples.groupby([sample_groupby]):
+                    
+                    height = len(g_df.index)
+                
+                    #rect_v = patches.Rectangle(
+                    #        (-100, base),
+                    #        width=70,
+                    #        height=height,
+                    #        clip_on=False, 
+                    #        linewidth=1, 
+                    #        edgecolor='black',
+                    #        facecolor="None"
+                    #)
+                    ax.get_yaxis().set_visible(False)
+                    ax.axhline(base + height, lw=2, color="black")
+                    #ax.text(-1.0*float(window_size), (base+(base+height))/2, g, rotation=90, va="center", ha="right", size=14)
+                    ax.text(-1.0, (base+(base+height))/2, g, va="center", ha="right", size=14)
+                    #ax.text(-1.0, (base+(base+height))/2, g, rotation=90, va="center", ha="right", size=14)
+                    #ax.add_patch(rect_v)
+                    #axd["A"].set_xlabel("Amino acid position")
+                    base = base + height
 
-            a = int(s_e.values.flatten().min())
-            b = int(s_e.values.flatten().max())
-            values = st.slider(
-                "Min Max Enrichment",
-                a,
-                b,
-                (a,b)
-            )
-            s_e[s_e < values[0]] = values[0]
-            s_e[s_e > values[1]] = values[1]
-
-            # Colormap
-            heatcolormap_choices = [
-                    "RdPu",
-                    "bwr",
-                    "bone",
-                    "pink"
-            
-            ]
-            heatcolormap = st.selectbox(
-                "Colormap",
-                heatcolormap_choices,
-                0
-            )
-            hcmap = getattr(cm, heatcolormap)
-
-            norm = st.selectbox(
-                "Color Scale",
-                ["Log", "Linear"],
-                0
-            )
-
-            submitted = st.form_submit_button("Submit")
-
-        #with right_column:
-    #with st.spinner(text='In progress'):
-
-    fig, ax = plt.subplots(figsize=[8, 8])
-    cbar_kws = dict(use_gridspec=False, location="right", label=enrichment)
-    sns.heatmap(
-            s_e, 
-            ax = ax, 
-            cmap=hcmap, 
-            cbar_kws=cbar_kws, 
-            norm=LogNorm() if norm=="Log" else None
-    )
-
-    if sample_groupby != "Unordered":
-
-        base=0
-        for g, g_df in agg_samples.groupby([sample_groupby]):
-            
-            height = len(g_df.index)
-        
-            #rect_v = patches.Rectangle(
-            #        (-100, base),
-            #        width=70,
-            #        height=height,
-            #        clip_on=False, 
-            #        linewidth=1, 
-            #        edgecolor='black',
-            #        facecolor="None"
-            #)
-            ax.get_yaxis().set_visible(False)
-            ax.axhline(base + height, lw=2, color="black")
-            #ax.text(-1.0*float(window_size), (base+(base+height))/2, g, rotation=90, va="center", ha="right", size=14)
-            ax.text(-1.0, (base+(base+height))/2, g, va="center", ha="right", size=14)
-            #ax.text(-1.0, (base+(base+height))/2, g, rotation=90, va="center", ha="right", size=14)
-            #ax.add_patch(rect_v)
-            #axd["A"].set_xlabel("Amino acid position")
-            base = base + height
-
-    st.write(fig)
+            st.write(fig)
