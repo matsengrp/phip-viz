@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 
 import copy
-from plotnine import *
+import os
+import json
+
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import LogNorm
 import matplotlib.patches as patches
-import altair as alt
 import seaborn as sns
+
 import streamlit as st
-import os
-import pickle
 import xarray as xr
 import pandas as pd
 import numpy as np
 import dask
 import phippery
 from phippery.tidy import tidy_ds
-import json
-
 
 st.set_page_config(layout='wide')
 
@@ -44,7 +42,10 @@ if 'queries' not in st.session_state:
 
 
 
-@st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
+@st.cache(
+    hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, 
+    suppress_st_warning=True
+)
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
     st.write("Cache miss")
 
@@ -56,7 +57,10 @@ def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
     )]
 
 
-@st.cache(hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, suppress_st_warning=True)
+@st.cache(
+    hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, 
+    suppress_st_warning=True
+)
 def compute_intervals(
     ds, 
     enrichment,
@@ -71,10 +75,10 @@ def compute_intervals(
     # grab s and p tables
     s_table = ds.sample_table.to_pandas().replace(np.nan, "None")
     p_table = ds.peptide_table.to_pandas().replace(np.nan, "None")
-    p_table["Loc"] = p_table["Loc"].astype(int) 
+    p_table[loc_feature] = p_table[loc_feature].astype(int) 
     
     # Sum up the enrichments within windows
-    windows = list(range(min(p_table["Loc"]), max(p_table["Loc"]), window_size))
+    windows = list(range(min(p_table[loc_feature]), max(p_table[loc_feature]), window_size))
     enrichment_columns = []
     aggregated_enrichment = {}
 
@@ -85,7 +89,7 @@ def compute_intervals(
     for l in range(len(windows)-1):
         start = windows[l]
         end = windows[l+1]
-        pep_id = p_table.loc[p_table["Loc"].isin(range(start, end)),:].index
+        pep_id = p_table.loc[p_table[loc_feature].isin(range(start, end)),:].index
         epitope_enrichment = enrichments.loc[pep_id, :]
         enrichment_columns.append(f"[{start}, {end})")
         if agg_func == "sum":
@@ -218,10 +222,10 @@ with st.expander('Peptide Table', expanded=False):
 #if "Heatmap" in selected_types and not st.session_state.clicked_query_type_flag:
 if "Heatmap" in selected_types: 
 
-    left_column, right_column = st.columns(2)
 
-    with left_column:
-        with st.expander('Heatmap Settings', expanded=True):
+    with st.expander('Heatmap Settings', expanded=True):
+        left_column, right_column = st.columns(2)
+        with left_column:
             with st.form("dt"):
                 st.write(f"Transform Data")
 
@@ -257,9 +261,6 @@ if "Heatmap" in selected_types:
                 if default_loc not in int_columns:
                     st.warning(f"At least one integer peptide feature which specifies the peptide location information is required for PhIP-Viz. Currently, config.json tells us that feature is named '{default_loc}', but does not exist in the peptide table. Be sure to select from the list of valid Loc features below. For more on what defines a locus feature, see: TODO")
 
-                print(types)
-                print(int_columns)
-                print(default_loc)
                 loc_feature = st.selectbox(
                     "Loc",
                     int_columns,

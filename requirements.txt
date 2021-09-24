@@ -1,5 +1,8 @@
 streamlit>=0.83.0
 watchdog
-plotnine>=0.8.0
 seaborn
-xarray==0.16.2
+matplotlib
+pandas
+numpy
+xarray==0.15.1
+dask
