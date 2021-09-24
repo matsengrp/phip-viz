@@ -15,6 +15,9 @@ source venv/bin/activate
 # Install the prerequisites for running this app
 # Replacing $REPO_FOLDER with the folder containing this repository
 python3 -m pip install -r $REPO_FOLDER/requirements.txt
+
+# Install phippery
+python -m pip install git+https://github.com/matsengrp/phippery.git@52b8c5fcd0c4c727fe760b17a3820a60eada2bf3
 ```
 
 ## Launch the app
