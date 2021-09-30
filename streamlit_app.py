@@ -215,6 +215,8 @@ selected_types = st.sidebar.multiselect(
 )
 
 
+#sample_expand = 
+st.write(f"qtype {qtype}")
 with st.expander('Sample Table', expanded=False):
     st.write(st.session_state.sample_table)
     st.write('Juicy deets')
@@ -287,11 +289,27 @@ if "Heatmap" in selected_types:
                     index=0
                 )
 
+                # How to group the samples
+                sample_groupby_choices2 = list(ds.sample_metadata.values)
+                sample_groupby2 = st.selectbox(
+                    "Sample Order By 2",
+                    ["Unordered"] + sample_groupby_choices2,
+                    index=0
+                )
 
-                if sample_groupby != "Unordered":
+                if sample_groupby != "Unordered" and sample_groupby2 == "Unordered":
                     sample_order = []
                     for g, g_df in agg_samples.groupby(
                             [sample_groupby]
+                            ):
+                        sample_order.extend(g_df.index)    
+                    assert len(sample_order) == len(agg_samples)
+                    agg_samples = agg_samples.reindex(sample_order)
+
+                elif sample_groupby != "Unordered" and sample_groupby2 != "Unordered":
+                    sample_order = []
+                    for g, g_df in agg_samples.groupby(
+                            [sample_groupby, sample_groupby2]
                             ):
                         sample_order.extend(g_df.index)    
                     assert len(sample_order) == len(agg_samples)
@@ -349,26 +367,15 @@ if "Heatmap" in selected_types:
             if sample_groupby != "Unordered":
 
                 base=0
-                for g, g_df in agg_samples.groupby([sample_groupby]):
+                gb = [sample_groupby] 
+                if sample_groupby2 != 'Unordered':
+                    gb += [sample_groupby2]
+                for g, g_df in agg_samples.groupby(gb):
                     
                     height = len(g_df.index)
-                
-                    #rect_v = patches.Rectangle(
-                    #        (-100, base),
-                    #        width=70,
-                    #        height=height,
-                    #        clip_on=False, 
-                    #        linewidth=1, 
-                    #        edgecolor='black',
-                    #        facecolor="None"
-                    #)
                     ax.get_yaxis().set_visible(False)
                     ax.axhline(base + height, lw=2, color="black")
-                    #ax.text(-1.0*float(window_size), (base+(base+height))/2, g, rotation=90, va="center", ha="right", size=14)
                     ax.text(-1.0, (base+(base+height))/2, g, va="center", ha="right", size=14)
-                    #ax.text(-1.0, (base+(base+height))/2, g, rotation=90, va="center", ha="right", size=14)
-                    #ax.add_patch(rect_v)
-                    #axd["A"].set_xlabel("Amino acid position")
                     base = base + height
 
             st.write(fig)
