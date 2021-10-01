@@ -18,8 +18,10 @@ import dask
 import phippery
 from phippery.tidy import tidy_ds
 
+# initialize wide view
 st.set_page_config(layout='wide')
 
+# 
 if 'query_key_index' not in st.session_state:
     st.session_state.query_key_index = 0 
 
