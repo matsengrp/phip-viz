@@ -40,8 +40,6 @@ if 'queries' not in st.session_state:
             "Condition": []
         }).set_index("qkey")
 
-
-
 @st.cache(
     hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, 
     suppress_st_warning=True
@@ -125,10 +123,6 @@ input_file_list = [
     f"{fp}" for fp in os.listdir(".")
     if fp.endswith('.phip')
 ]
-#input_file_list += [
-#    f"_data/{fp}" for fp in os.listdir("_data/")
-#    if fp.endswith('.phip')
-#]
 selected_input_file = st.sidebar.selectbox(
     "Input File",
     input_file_list
@@ -214,14 +208,13 @@ selected_types = st.sidebar.multiselect(
     default=unique_types
 )
 
-
-#sample_expand = 
-st.write(f"qtype {qtype}")
-with st.expander('Sample Table', expanded=False):
+sample_expand = True if qtype == 'sample' else False
+with st.expander('Sample Table', expanded=sample_expand):
     st.write(st.session_state.sample_table)
     st.write('Juicy deets')
 
-with st.expander('Peptide Table', expanded=False):
+peptide_expand = True if qtype == 'peptide' else False
+with st.expander('Peptide Table', expanded=peptide_expand):
     st.write(st.session_state.peptide_table)
     st.write('Juicy deets')
 
