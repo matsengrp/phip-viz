@@ -4,11 +4,12 @@ import copy
 import os
 import json
 
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.colors import LogNorm
-import matplotlib.patches as patches
-import seaborn as sns
+#import matplotlib.pyplot as plt
+#from matplotlib import cm
+#from matplotlib.colors import LogNorm
+#import matplotlib.patches as patches
+#import seaborn as sns
+import altair as alt
 
 import streamlit as st
 import xarray as xr
@@ -20,6 +21,13 @@ from phippery.tidy import tidy_ds
 
 # initialize wide view
 st.set_page_config(layout='wide')
+
+"""
+# PhIP-Seq Interactive enrichment visualizer
+
+## Welcome!!
+"""
+
 
 # 
 if 'query_key_index' not in st.session_state:
@@ -44,10 +52,11 @@ if 'queries' not in st.session_state:
 
 @st.cache(
     hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, 
-    suppress_st_warning=True
+    suppress_st_warning=True,
+    max_entries=10
 )
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
-    st.write("Cache miss")
+    st.write("Xarray data Cache miss")
 
     ds = phippery.load(input_file_path)
     sid, pid = phippery.id_coordinate_from_query(ds, df)
@@ -56,64 +65,11 @@ def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
         peptide_id=pid
     )]
 
-
-@st.cache(
-    hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, 
-    suppress_st_warning=True
-)
-def compute_intervals(
-    ds, 
-    enrichment,
-    window_size,
-    agg_func,
-    loc_feature
-):
-
-    my_bar = st.progress(0)
-
-    enrichments = ds[f"{enrichment}"]
-    # grab s and p tables
-    s_table = ds.sample_table.to_pandas().replace(np.nan, "None")
-    p_table = ds.peptide_table.to_pandas().replace(np.nan, "None")
-    p_table[loc_feature] = p_table[loc_feature].astype(int) 
-    
-    # Sum up the enrichments within windows
-    windows = list(range(min(p_table[loc_feature]), max(p_table[loc_feature]), window_size))
-    enrichment_columns = []
-    aggregated_enrichment = {}
-
-    # TODO I'm sure there's a better way to vectorize.
-    # but I kinda like the progress bar
-
-    # TODO is this really the best way to compute windows??
-    for l in range(len(windows)-1):
-        start = windows[l]
-        end = windows[l+1]
-        pep_id = p_table.loc[p_table[loc_feature].isin(range(start, end)),:].index
-        epitope_enrichment = enrichments.loc[pep_id, :]
-        enrichment_columns.append(f"[{start}, {end})")
-        if agg_func == "sum":
-            agg = epitope_enrichment.sum(axis=0).values
-        elif agg_func == "median":
-            agg = epitope_enrichment.median(axis=0).values
-        elif agg_func == "mean":
-            agg = epitope_enrichment.mean(axis=0).values
-        aggregated_enrichment[f"[{start}, {end})"] = agg 
-
-        percent_complete = int((l / len(windows))*100)
-        my_bar.progress(percent_complete)
-    my_bar.empty()
-    agg_samples = pd.concat(
-            [s_table, pd.DataFrame(aggregated_enrichment, index=s_table.index)], 
-            axis=1
-    )
-    
-    return (agg_samples, enrichment_columns)
-
 ph = st.sidebar.empty()
+
 # TITLE OF THE APP
 # TODO decorate
-st.sidebar.title('PhIPseq Viz')
+st.sidebar.title('Working Dataset Summary')
 
 # TODO
 # Long description.
@@ -164,10 +120,7 @@ qtype = st.sidebar.selectbox(
         ["sample", "peptide"],
 )
 
-
 num_queries = st.session_state.query_key_index
-
-
 num_dropped_queries = st.session_state.drop_query_key_index
 
 # Add Query
@@ -178,7 +131,6 @@ st.sidebar.text_input(
     args=tuple([f"q{num_queries+1}", qtype])
 )
 
-
 st.sidebar.dataframe(st.session_state.queries)
 
 # Remove Query
@@ -188,7 +140,6 @@ st.sidebar.text_input(
     on_change=drop_query_condition,
     args=tuple([f"rm_key_{num_dropped_queries}"])
 )
-
 
 # Load data (cached if no change)
 df = copy.deepcopy(st.session_state.queries)
@@ -201,7 +152,6 @@ st.session_state['sample_table'] = copy.deepcopy(
 st.session_state['peptide_table'] = copy.deepcopy(
         ds.peptide_table.to_pandas().infer_objects()
 )
-
 
 unique_types = ["Heatmap"]
 selected_types = st.sidebar.multiselect(
@@ -239,138 +189,77 @@ if "Heatmap" in selected_types:
                     "Normalization layer",
                     enrichment_options
                 )
-                
-                window_size_options = list(range(1, len(ds.peptide_id.values)))
-                window_size = st.selectbox(
-                    "Peptide Window Size",
-                    window_size_options
-                )
-                
-                agg_choices = ['sum', 'median', 'mean']
-                agg_func = st.selectbox(
-                    "Window Aggregation Function",
-                    agg_choices
-                )
 
-            
-                # TODO Make true checks
-                # random thought - this could be something like virus??
-                types = st.session_state.peptide_table.dtypes
-                int_columns = types[types==np.int64].index.values
-                default_loc = st.session_state.config["Locus"]
-
-                if default_loc not in int_columns:
-                    st.warning(f"At least one integer peptide feature which specifies the peptide location information is required for PhIP-Viz. Currently, config.json tells us that feature is named '{default_loc}', but does not exist in the peptide table. Be sure to select from the list of valid Loc features below. For more on what defines a locus feature, see: TODO")
-
-                loc_feature = st.selectbox(
-                    "Loc",
-                    int_columns,
-                    index = int(np.where(int_columns==default_loc)[0][0])
-                )
-                
-                agg_samples, enrichment_columns = compute_intervals(
-                    ds, 
-                    enrichment,
-                    window_size,
-                    agg_func,
-                    loc_feature
-                )
-
-                # How to group the samples
-                sample_groupby_choices = list(ds.sample_metadata.values)
-                sample_groupby = st.selectbox(
-                    "Sample Order By",
-                    ["Unordered"] + sample_groupby_choices,
-                    index=0
-                )
-
-                # How to group the samples
-                sample_groupby_choices2 = list(ds.sample_metadata.values)
-                sample_groupby2 = st.selectbox(
-                    "Sample Order By 2",
-                    ["Unordered"] + sample_groupby_choices2,
-                    index=0
-                )
-
-                if sample_groupby != "Unordered" and sample_groupby2 == "Unordered":
-                    sample_order = []
-                    for g, g_df in agg_samples.groupby(
-                            [sample_groupby]
-                            ):
-                        sample_order.extend(g_df.index)    
-                    assert len(sample_order) == len(agg_samples)
-                    agg_samples = agg_samples.reindex(sample_order)
-
-                elif sample_groupby != "Unordered" and sample_groupby2 != "Unordered":
-                    sample_order = []
-                    for g, g_df in agg_samples.groupby(
-                            [sample_groupby, sample_groupby2]
-                            ):
-                        sample_order.extend(g_df.index)    
-                    assert len(sample_order) == len(agg_samples)
-                    agg_samples = agg_samples.reindex(sample_order)
-
-                ## Range of values to viz
-                s_e = copy.deepcopy(agg_samples[enrichment_columns])
-
-                a = int(s_e.values.flatten().min())
-                b = int(s_e.values.flatten().max())
-                values = st.slider(
-                    "Min Max Enrichment",
-                    a,
-                    b,
-                    (a,b)
-                )
-                s_e[s_e < values[0]] = values[0]
-                s_e[s_e > values[1]] = values[1]
-
-                # Colormap
-                heatcolormap_choices = [
-                        "RdPu",
-                        "bwr",
-                        "bone",
-                        "pink"
-                
+                agg_func_choices = [
+                        "average", 
+                        "max", 
+                        "mean",
+                        "median",
+                        "min",
+                        "stderr", 
+                        "stdev", 
+                        "sum"
                 ]
-                heatcolormap = st.selectbox(
-                    "Colormap",
-                    heatcolormap_choices,
-                    0
+                agg_func = st.selectbox(
+                    "aggregate function",
+                    agg_func_choices,
+                    index=0
                 )
-                hcmap = getattr(cm, heatcolormap)
 
                 norm = st.selectbox(
                     "Color Scale",
                     ["Log", "Linear"],
-                    0
+                    index=1
+                )
+                
+                #x = st.text_input(label=f"X")
+                # How to group the samples
+                y_choices = list(ds.sample_metadata.values)
+                y = st.selectbox(
+                    "y-axis sample feature",
+                    ["sample_id"] + y_choices,
+                    index=0
                 )
 
-                submitted = st.form_submit_button("Submit")
+                #y = st.text_input(label=f"Y")
+                # How to group the peptides
+                x_choices = list(ds.peptide_metadata.values)
+                x = st.selectbox(
+                    "x-axis peptide feature",
+                    ["peptide_id"] + x_choices,
+                    index=0
+                )
+                submitted = st.form_submit_button("Render Heatmap")
 
         with right_column:
 
-            fig, ax = plt.subplots(figsize=[8, 8])
-            cbar_kws = dict(use_gridspec=False, location="right", label=enrichment)
-            sns.heatmap(
-                    s_e, 
-                    ax = ax, 
-                    cmap=hcmap, 
-                    cbar_kws=cbar_kws, 
-                    norm=LogNorm() if norm=="Log" else None
-            )
+            if submitted:
+                # TODO, we'll want to check the axis they've chosen
+                # are unique or throw a warning??
+                sm = [y] if y != 'sample_id' else []
+                pm = [x] if x != 'peptide_id' else []
 
-            if sample_groupby != "Unordered":
+                # throw out all things we don't care about before 
+                # creating the tall dataframe (quite memory expensive)
+                subset_ds = copy.deepcopy(ds.loc[
+                    dict(
+                        sample_metadata = sm,
+                        peptide_metadata = pm
+                    )
+                ])
 
-                base=0
-                gb = [sample_groupby] 
-                if sample_groupby2 != 'Unordered':
-                    gb += [sample_groupby2]
-                for g, g_df in agg_samples.groupby(gb):
-                    
-                    height = len(g_df.index)
-                    ax.get_yaxis().set_visible(False)
-                    ax.axhline(base + height, lw=2, color="black")
-                    ax.text(-1.0, (base+(base+height))/2, g, va="center", ha="right", size=14)
-                    base = base + height
+                keep_tables = set(["sample_table", "peptide_table", enrichment])
+                for dt in set(list(subset_ds.data_vars)) - keep_tables:
+                    del subset_ds[dt]
 
-            st.write(fig)
+                # cached tall df - not really sure how much this helps?
+                # it probably takes more memory than time
+                tall_subset = tidy_ds(subset_ds)
+
+                c = alt.Chart(tall_subset).mark_rect().encode(
+                    x=f'{x}:O',
+                    y=f'{y}:O',
+                    color=f'{agg_func}({enrichment}):Q'
+                )
+                st.altair_chart(c, use_container_width=True)
+

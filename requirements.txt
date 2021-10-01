@@ -1,7 +1,6 @@
 streamlit>=0.83.0
 watchdog
-seaborn
-matplotlib
+altair
 pandas
 numpy
 xarray==0.15.1
