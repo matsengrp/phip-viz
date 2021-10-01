@@ -22,12 +22,6 @@ from phippery.tidy import tidy_ds
 # initialize wide view
 st.set_page_config(layout='wide')
 
-"""
-# PhIP-Seq Interactive enrichment visualizer
-
-## Welcome!!
-"""
-
 
 # 
 if 'query_key_index' not in st.session_state:
@@ -56,7 +50,7 @@ if 'queries' not in st.session_state:
     max_entries=10
 )
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
-    st.write("Xarray data Cache miss")
+    #st.write("Xarray data Cache miss")
 
     ds = phippery.load(input_file_path)
     sid, pid = phippery.id_coordinate_from_query(ds, df)
@@ -70,11 +64,33 @@ ph = st.sidebar.empty()
 # TITLE OF THE APP
 # TODO decorate
 st.sidebar.title('Working Dataset Summary')
+with st.sidebar:
+    """
+    The core feature of this app is to first select the subset of the dataset 
+    which you would like to visualize. Queries are applied using the pandas df
+    [query heuristic]()
+    """
 
 # TODO
 # Long description.
 #expander = st.expander("FAQ")
 #expander.write("Here you could put in some really, really long explanations...")
+
+"""
+# PhIP-Seq Interactive enrichment visualizer
+
+### Welcome!!
+
+*To get started, select a dataset file from the options in the sidebar to the left.*
+
+This app is intended for viewing the many facets of an enrichment matrix resulting
+from a Phage Immuno Precipitation experiment (PhIP-Seq). 
+This visualization app is part of the *phippery suite* of tools, the 
+[documentation]() will tell you how to create input from your own data, or obtain 
+example data to play with.
+"""
+
+
 
 # SELECT WHICH FILE TO VIEW
 input_file_list = [
@@ -159,6 +175,8 @@ selected_types = st.sidebar.multiselect(
     unique_types,
     default=unique_types
 )
+
+
 
 sample_expand = True if qtype == 'sample' else False
 with st.expander('Sample Table', expanded=sample_expand):
