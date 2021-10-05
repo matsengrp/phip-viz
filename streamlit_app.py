@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
+# https://share.streamlit.io/1edv/evolution/app/app.py
+
 import copy
 import os
 import json
 
-#import matplotlib.pyplot as plt
-#from matplotlib import cm
-#from matplotlib.colors import LogNorm
-#import matplotlib.patches as patches
-#import seaborn as sns
 import altair as alt
 
 import streamlit as st
@@ -70,11 +67,6 @@ with st.sidebar:
     which you would like to visualize. Queries are applied using the pandas df
     [query heuristic]()
     """
-
-# TODO
-# Long description.
-#expander = st.expander("FAQ")
-#expander.write("Here you could put in some really, really long explanations...")
 
 """
 # PhIP-Seq Interactive enrichment visualizer
@@ -163,10 +155,10 @@ ds = load_data(selected_input_file, df)
 
 #if 'sample_table' not in st.session_state:
 st.session_state['sample_table'] = copy.deepcopy(
-        ds.sample_table.to_pandas().infer_objects()
+        ds.sample_table.to_pandas().reset_index().infer_objects()
 )
 st.session_state['peptide_table'] = copy.deepcopy(
-        ds.peptide_table.to_pandas().infer_objects()
+        ds.peptide_table.to_pandas().reset_index().infer_objects()
 )
 
 unique_types = ["Heatmap"]
@@ -175,8 +167,6 @@ selected_types = st.sidebar.multiselect(
     unique_types,
     default=unique_types
 )
-
-
 
 sample_expand = True if qtype == 'sample' else False
 with st.expander('Sample Table', expanded=sample_expand):
@@ -194,7 +184,8 @@ if "Heatmap" in selected_types:
 
     with st.expander('Heatmap Settings', expanded=True):
         left_column, right_column = st.columns(2)
-        with left_column:
+        #with left_column:
+        if True:
             with st.form("dt"):
                 st.write(f"Transform Data")
 
@@ -224,13 +215,6 @@ if "Heatmap" in selected_types:
                     index=0
                 )
 
-                norm = st.selectbox(
-                    "Color Scale",
-                    ["Log", "Linear"],
-                    index=1
-                )
-                
-                #x = st.text_input(label=f"X")
                 # How to group the samples
                 y_choices = list(ds.sample_metadata.values)
                 y = st.selectbox(
@@ -247,15 +231,25 @@ if "Heatmap" in selected_types:
                     ["peptide_id"] + x_choices,
                     index=0
                 )
+
+                facet_choices = list(ds.peptide_metadata.values)
+                facet = st.selectbox(
+                    "peptide facet feature",
+                    ["None"] + facet_choices,
+                    index=0
+                )
+                domain_max = st.number_input("domain max")
                 submitted = st.form_submit_button("Render Heatmap")
 
-        with right_column:
+
+        #with right_column:
 
             if submitted:
                 # TODO, we'll want to check the axis they've chosen
                 # are unique or throw a warning??
                 sm = [y] if y != 'sample_id' else []
                 pm = [x] if x != 'peptide_id' else []
+                pm = pm + [facet] if facet != 'None' else pm
 
                 # throw out all things we don't care about before 
                 # creating the tall dataframe (quite memory expensive)
@@ -270,14 +264,20 @@ if "Heatmap" in selected_types:
                 for dt in set(list(subset_ds.data_vars)) - keep_tables:
                     del subset_ds[dt]
 
-                # cached tall df - not really sure how much this helps?
-                # it probably takes more memory than time
                 tall_subset = tidy_ds(subset_ds)
 
+                kwargs = {}
+                if domain_max:
+                    kwargs["scale"] = alt.Scale(domain=[0, domain_max])
+                color = alt.Color(f'{agg_func}({enrichment}):Q', **kwargs)
+
                 c = alt.Chart(tall_subset).mark_rect().encode(
-                    x=f'{x}:O',
-                    y=f'{y}:O',
-                    color=f'{agg_func}({enrichment}):Q'
+                    x=alt.X(f'{x}:O'),
+                    y=alt.Y(f'{y}:O'),
+                    color=color
                 )
+               
+                c = c.facet(facet, columns=1) if facet != 'None' else c
+
                 st.altair_chart(c, use_container_width=True)
 
