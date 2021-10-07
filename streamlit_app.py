@@ -7,6 +7,7 @@ import os
 import json
 
 import altair as alt
+from vega_datasets import data
 
 import streamlit as st
 import xarray as xr
@@ -76,7 +77,7 @@ with st.sidebar:
 *To get started, select a dataset file from the options in the sidebar to the left.*
 
 This app is intended for viewing the many facets of an enrichment matrix resulting
-from a Phage Immuno Precipitation experiment (PhIP-Seq). 
+from a set of Phage Immuno Precipitation (PhIP-Seq) experiments. 
 This visualization app is part of the *phippery suite* of tools, the 
 [documentation]() will tell you how to create input from your own data, or obtain 
 example data to play with.
@@ -179,105 +180,156 @@ with st.expander('Peptide Table', expanded=peptide_expand):
     st.write('Juicy deets')
 
 #if "Heatmap" in selected_types and not st.session_state.clicked_query_type_flag:
-if "Heatmap" in selected_types: 
+#if "Heatmap" in selected_types: 
 
 
-    with st.expander('Heatmap Settings', expanded=True):
-        left_column, right_column = st.columns(2)
+    #with st.expander('Heatmap Settings', expanded=True):
+        #left_column, right_column = st.columns(2)
         #with left_column:
-        if True:
-            with st.form("dt"):
-                st.write(f"Transform Data")
+if True:
+    with st.form("dt"):
+        st.write(f"Transform Data")
 
-                enrichment_options = []
-                for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
-                    if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
-                        enrichment_options.append(dt)
+        enrichment_options = []
+        for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
+            if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
+                enrichment_options.append(dt)
 
-                enrichment = st.selectbox(
-                    "Normalization layer",
-                    enrichment_options
-                )
+        enrichment = st.selectbox(
+            "Normalization layer",
+            enrichment_options
+        )
 
-                agg_func_choices = [
-                        "average", 
-                        "max", 
-                        "mean",
-                        "median",
-                        "min",
-                        "stderr", 
-                        "stdev", 
-                        "sum"
-                ]
-                agg_func = st.selectbox(
-                    "aggregate function",
-                    agg_func_choices,
-                    index=0
-                )
+        agg_func_choices = [
+                "average", 
+                "max", 
+                "mean",
+                "median",
+                "min",
+                "stderr", 
+                "stdev", 
+                "sum"
+        ]
+        agg_func = st.selectbox(
+            "aggregate function",
+            agg_func_choices,
+            index=0
+        )
 
-                # How to group the samples
-                y_choices = list(ds.sample_metadata.values)
-                y = st.selectbox(
-                    "y-axis sample feature",
-                    ["sample_id"] + y_choices,
-                    index=0
-                )
+        """
+        ## IP Observation groups
 
-                #y = st.text_input(label=f"Y")
-                # How to group the peptides
-                x_choices = list(ds.peptide_metadata.values)
-                x = st.selectbox(
-                    "x-axis peptide feature",
-                    ["peptide_id"] + x_choices,
-                    index=0
-                )
+        Select how you would like to aggregate and group IP observation annotation
+        groups.
+        """
+        
+        """
+        select which feature would you like to plot on the **y-axis**
+        """
 
-                facet_choices = list(ds.peptide_metadata.values)
-                facet = st.selectbox(
-                    "peptide facet feature",
-                    ["None"] + facet_choices,
-                    index=0
-                )
-                domain_max = st.number_input("domain max")
-                submitted = st.form_submit_button("Render Heatmap")
+        # How to group the samples
+        y_choices = list(ds.sample_metadata.values)
+        y = st.selectbox(
+            "y-axis sample feature",
+            ["sample_id"] + y_choices,
+            index=y_choices.index("patient_status") + 1
+        )
+
+        """
+        select which sample feature would you like to use for a **column** facet
+        """
+
+        sample_facet_choices = list(ds.sample_metadata.values)
+        sample_facet = st.selectbox(
+            "Facet feature",
+            ["None"] + sample_facet_choices,
+            index=0
+        )
+
+        """
+        ## Peptide Observation groups
+
+        Select how you would like to aggregate and group peptide annotation
+        groups.
+        """
+
+        """
+        select which feature would you like to plot on the **x-axis**
+        """
+
+        x_choices = list(ds.peptide_metadata.values)
+        x = st.selectbox(
+            "x-axis peptide feature",
+            ["peptide_id"] + x_choices,
+            index=x_choices.index("Protein") + 1
+        )
+
+        """
+        select which peptide feature would you like to use for a **row** facet
+        """
+
+        peptide_facet_choices = list(ds.peptide_metadata.values)
+        peptide_facet = st.selectbox(
+            "Facet feature",
+            ["None"] + peptide_facet_choices,
+            index=0
+        )
+
+        domain_max = st.number_input("domain max")
+        submitted = st.form_submit_button("Render Heatmap")
 
 
-        #with right_column:
+#with right_column:
 
-            if submitted:
-                # TODO, we'll want to check the axis they've chosen
-                # are unique or throw a warning??
-                sm = [y] if y != 'sample_id' else []
-                pm = [x] if x != 'peptide_id' else []
-                pm = pm + [facet] if facet != 'None' else pm
+    if submitted:
+        # TODO, we'll want to check the axis they've chosen
+        # are unique or throw a warning??
+        sm = [y] if y != 'sample_id' else []
+        pm = [x] if x != 'peptide_id' else []
 
-                # throw out all things we don't care about before 
-                # creating the tall dataframe (quite memory expensive)
-                subset_ds = copy.deepcopy(ds.loc[
-                    dict(
-                        sample_metadata = sm,
-                        peptide_metadata = pm
-                    )
-                ])
+        pm = pm + [peptide_facet] if peptide_facet != 'None' else pm
+        sm = sm + [sample_facet] if sample_facet != 'None' else sm
 
-                keep_tables = set(["sample_table", "peptide_table", enrichment])
-                for dt in set(list(subset_ds.data_vars)) - keep_tables:
-                    del subset_ds[dt]
+        # throw out all things we don't care about before 
+        # creating the tall dataframe (quite memory expensive)
+        subset_ds = copy.deepcopy(ds.loc[
+            dict(
+                sample_metadata = sm,
+                peptide_metadata = pm
+            )
+        ])
 
-                tall_subset = tidy_ds(subset_ds)
+        keep_tables = set(["sample_table", "peptide_table", enrichment])
+        for dt in set(list(subset_ds.data_vars)) - keep_tables:
+            del subset_ds[dt]
 
-                kwargs = {}
-                if domain_max:
-                    kwargs["scale"] = alt.Scale(domain=[0, domain_max])
-                color = alt.Color(f'{agg_func}({enrichment}):Q', **kwargs)
+        tall_subset = tidy_ds(subset_ds)
 
-                c = alt.Chart(tall_subset).mark_rect().encode(
-                    x=alt.X(f'{x}:O'),
-                    y=alt.Y(f'{y}:O'),
-                    color=color
-                )
-               
-                c = c.facet(facet, columns=1) if facet != 'None' else c
+        kwargs = {}
+        if domain_max:
+            kwargs["scale"] = alt.Scale(domain=[0, domain_max])
+        color = alt.Color(f'{agg_func}({enrichment}):Q', **kwargs)
 
-                st.altair_chart(c, use_container_width=True)
+        c = alt.Chart(tall_subset).mark_rect().encode(
+            x=alt.X(f'{x}:O'),
+            y=alt.Y(f'{y}:O'),
+            color=color,
+            tooltip = [
+                alt.Tooltip(f'{agg_func}({enrichment}):Q'),
+                alt.Tooltip(f'count({enrichment}):Q'),
+            ]
+        ).properties(
+            width=1000
+        )
+       
+        facet_kwargs = {}
+        if peptide_facet != "None":
+            facet_kwargs["row"] = peptide_facet
+        if sample_facet != "None":
+            facet_kwargs["column"] = sample_facet
+
+        if len(facet_kwargs) >= 1:
+            c = c.facet(**facet_kwargs)
+
+        st.altair_chart(c, use_container_width=False)
 
