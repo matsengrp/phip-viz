@@ -68,8 +68,12 @@ st.sidebar.title('Dataset query')
 q_help = st.sidebar.button("?", key="q_help")
 if q_help:
     st.sidebar.info(f"""
+        Looking at too much data?
+        Overlaping axis groups?
         Using the sidebar you can _select_, or _remove_ subsets of the current 
-        working dataset to 
+        working dataset.
+        
+        Use the widgets below to apply a condition which subsets the entire dataset.
     """
 )
 
@@ -96,16 +100,22 @@ if g_help:
         The options in the app are defined by the sample and peptides tables used to 
         produce the enrichment matrix. 
 
+        The general idea is that you choose the subset of the dataset you're interested in,
+        (using the query tools in the sidebar) and then decide how you would like to 
+        aggregate (or not) the enrichments of annotation groups as determined by the 
+        sample or peptide tables. Use the drop-down menus below to see sub setting options
+        for any feature of interest.
+
         This visualization app is part of the *phippery suite* of tools.
         For more information about the data format, the 
         [documentation](https://matsengrp.github.io/phippery/introduction.html) 
-        will proivide more insight into how to create input from your own data, or obtain 
+        will provide more insight into how to create input from your own data, or obtain 
         example data to play with.
 
         **A few notes**
 
-        1. The queries are not save if the page refereshes. We will soon allow users
-            to upload/download query tables for convinience
+        1. The queries are not save if the page refreshes. We will soon allow users
+            to upload/download query tables for convenience
 
         2. The application was built to be as flexible as possible with respect to the 
             types of phage libraries that may be used as input. That being the case, we
@@ -164,6 +174,15 @@ qtype = st.sidebar.selectbox(
         'query type', 
         ["sample", "peptide"],
 )
+qt_help = st.sidebar.button("?", key="qt_help")
+if qt_help:
+    st.sidebar.info(f"""
+        which axis of the data would you like to subset with a condition?
+        
+        we subset the data by applying a single condition to either of the 
+        sample or peptide axis, _independently_
+    """
+)
 
 num_queries = st.session_state.query_key_index
 num_dropped_queries = st.session_state.drop_query_key_index
@@ -175,6 +194,21 @@ st.sidebar.text_input(
     on_change=add_query_condition,
     args=tuple([f"q{num_queries+1}", qtype])
 )
+state_help = st.sidebar.button("?", key="state_help")
+if state_help:
+    st.sidebar.info(f"""
+        Query statements are given in the form:
+        <Feature> <conditional> <feature level>
+
+        The queries follow the pandas 
+        [query heuristic](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.query.html)
+
+        For example statements to subset the {qtype} groups,
+        see the {qtype} drop down in the main console
+        and view the summary for a feature of interest
+    """
+)
+
 
 st.sidebar.dataframe(st.session_state.queries)
 
@@ -185,6 +219,16 @@ st.sidebar.text_input(
     on_change=drop_query_condition,
     args=tuple([f"rm_key_{num_dropped_queries}"])
 )
+remove_help = st.sidebar.button("?", key="remove_help")
+if remove_help:
+    st.sidebar.info(f"""
+        To remove a condition, simply enter the index of the query
+        as show in the dataframe above. i.e. enter 'q0',
+        or replace 0 with the Key (far left index column) 
+        of the condition you wish to "un-apply" from the input dataset
+
+    """
+    )
 
 with st.sidebar:
     """
@@ -218,7 +262,12 @@ st.session_state['peptide_table'] = copy.deepcopy(
 ds_help = st.button("?", key="ds_help")
 if ds_help:
     st.info(f"""
-        Each of the exanders, *Enrichments*, *Sample table*, and *Peptide*
+        Each of the expanders (drop down menus;
+        *Enrichments*, *Sample table*, and *Peptide table*), we provide a 
+        summary of the data resulting form the _current working dataset_.
+
+        This means you are provided with summary of the data '_post_-sub setting'
+        each time you subset the data using the sidebar tools to the left,
     """
 )
 
@@ -233,7 +282,7 @@ with st.expander('Sample Table', expanded=sample_expand):
 
     sample_sum_choices = list(ds.sample_metadata.values)
     sample_sum = st.selectbox(
-        "Feature summary",
+            "Feature summary for:",
         ["N/A"]  +sample_sum_choices,
         0
     )
@@ -330,7 +379,7 @@ with st.expander('Peptide Table', expanded=peptide_expand):
 
     sample_sum_choices = list(ds.peptide_metadata.values)
     sample_sum = st.selectbox(
-        "Feature summary",
+            "Feature summary for:",
         ["N/A"]  +sample_sum_choices,
         0
     )
@@ -432,6 +481,10 @@ with st.expander('Peptide Table', expanded=peptide_expand):
 
 enrichment_expand = True if qtype == 'enrichment' else False
 with st.expander('Enrichment Matrix', expanded=enrichment_expand):
+    st.info(f"""
+        This section is under construction, for now, select the enrichment transformation
+        you would like to visualize
+    """)
 
     enrichment_options = []
     for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
@@ -442,6 +495,8 @@ with st.expander('Enrichment Matrix', expanded=enrichment_expand):
         "Normalization layer",
         enrichment_options
     )
+
+    
     
 """
 ### Heatmap
@@ -449,7 +504,7 @@ with st.expander('Enrichment Matrix', expanded=enrichment_expand):
 
 with st.expander("Heatmap settings"):
     with st.form("dt"):
-        st.write(f"Transform Data")
+        st.write(f"")
     
     
         agg_func_choices = [
