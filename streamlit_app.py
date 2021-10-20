@@ -5,9 +5,10 @@
 import copy
 import os
 import json
+import io
 
 import altair as alt
-from vega_datasets import data
+#from vega_datasets import data
 
 import streamlit as st
 import xarray as xr
@@ -16,15 +17,12 @@ import numpy as np
 import dask
 import phippery
 from phippery.tidy import tidy_ds
+from phippery.string import string_feature
 
 # initialize wide view
 st.set_page_config(layout='wide')
 
 
-if 'query_key_index' not in st.session_state:
-    st.session_state.query_key_index = 0 
-
-# 
 if 'query_key_index' not in st.session_state:
     st.session_state.query_key_index = 0 
 
@@ -41,8 +39,8 @@ if 'config' not in st.session_state:
 if 'queries' not in st.session_state:
     st.session_state['queries'] = pd.DataFrame({
             "qkey": [],
-            "Type":[], 
-            "Condition": []
+            "dimension":[], 
+            "expression": []
         }).set_index("qkey")
 
 @st.cache(
@@ -235,7 +233,8 @@ with st.sidebar:
     ## Overlab & Matsen
 
     NSF, NIH, HHMI
-    
+
+    _Note: ^ placeholder_ 
     """
 
 # Load data (cached if no change)
@@ -244,18 +243,16 @@ ds = load_data(selected_input_file, df)
 
 #if 'sample_table' not in st.session_state:
 st.session_state['sample_table'] = copy.deepcopy(
-        ds.sample_table.to_pandas().reset_index().infer_objects()
+        #ds.sample_table.to_pandas().reset_index().infer_objects().fillna("NA")
+        ds.sample_table.to_pandas().reset_index().convert_dtypes()
 )
 st.session_state['peptide_table'] = copy.deepcopy(
-        ds.peptide_table.to_pandas().reset_index().infer_objects()
+        #ds.peptide_table.to_pandas().reset_index().infer_objects().fillna("NA")
+        ds.peptide_table.to_pandas().reset_index().convert_dtypes()
+        #ds.peptide_table.to_pandas().reset_index().convert_dtypes()
 )
 
-#unique_types = ["Heatmap"]
-#selected_types = st.sidebar.multiselect(
-#    "Types",
-#    unique_types,
-#    default=unique_types
-#)
+
 """
 ## Current Working Dataset
 """
@@ -283,86 +280,29 @@ with st.expander('Sample Table', expanded=sample_expand):
     sample_sum_choices = list(ds.sample_metadata.values)
     sample_sum = st.selectbox(
             "Feature summary for:",
-        ["N/A"]  +sample_sum_choices,
+        ["Full Table Summary"]  +sample_sum_choices,
         0
     )
-    f"""
-    ### {sample_sum} sample feature summary:
-    """
 
-    if sample_sum != "N/A": 
-        ser = st.session_state.sample_table[sample_sum]
-        dt = ser.dtype 
-        des = ser.describe()
-        if dt == object:
-            levels = list(set(ser))
-            num_levels = len(levels)
-            if num_levels >= 50:
-                st.info(f"""
-                {sample_sum} is a categorical feature with too many factor levels (n = {num_levels}) to describe, 
-                here (probably a desciptive string, and thus, not great plotting feature)
-                """)
-            elif num_levels < 50 and num_levels >=2:
-                
-                all_factors = ", ".join(levels)
-                st.info(f"""
-                {sample_sum} is a categorical feature with the following factor levels to investigate, 
+    if sample_sum == "Full Table Summary": 
+        buffer = io.StringIO()
+        st.session_state.sample_table.info(buf=buffer, verbose=True)
+        s = buffer.getvalue()
+        st.text(s)
+    else:
 
-                **{all_factors}**
-
-                Some example query statements:
-
-                > {sample_sum} in ['{levels[0]}', '{levels[1]}', ...]
-
-                > {sample_sum} not in ['{levels[0]}', '{levels[-1]}', ...]
-
-                > {sample_sum} != '{levels[-2]}'
-
-                """)
-
-                f"""
-                ### {sample_sum} Factor level counts
-                """
-                st.write(ser.value_counts())
-            else:
-                st.info(f"""
-                    There's only a single factor level, {levels[0]}, across all samples.
-                """
-                )
-
-        elif dt == bool:
-            st.info(f"""
-                Boolean Feature:
-
-                Some example query statements:
-
-                > {sample_sum} == True
-
-                > {sample_sum} == False
-            """
-            )
-            f"""
-            ### {sample_sum} Factor level counts
-            """
-            st.write(ser.value_counts())
-        else:
-            st.info(f"""
-                Numerical Feature:
-
-                Some example query statements:
-
-                > {sample_sum} >= {des[1]}
-
-            """
-            )
-            f"""
-            ### {sample_sum} Summary
-            """
-            des = ser.describe()
-            st.write(des)
+        #def string_feature(ds, feature: str, verbosity = 0, dim="sample"):
+        des = string_feature(
+            ds, 
+            feature= sample_sum, 
+            verbosity = 0, 
+            dim="sample"
+        )
+        st.text(des)
 
     """
-    ### raw data
+    ------------------------------------------------------------
+    ### Full sample table
     """
 
     st.write(st.session_state.sample_table)
@@ -377,88 +317,28 @@ with st.expander('Peptide Table', expanded=peptide_expand):
     Total number of peptides: {np}
     """
 
-    sample_sum_choices = list(ds.peptide_metadata.values)
-    sample_sum = st.selectbox(
+    peptide_sum_choices = list(ds.peptide_metadata.values)
+    peptide_sum = st.selectbox(
             "Feature summary for:",
-        ["N/A"]  +sample_sum_choices,
+        ["Full Table Summary"]  +peptide_sum_choices,
         0
     )
-    f"""
-    ### {sample_sum} sample feature summary:
-    """
 
-    if sample_sum != "N/A": 
-        ser = st.session_state.peptide_table[sample_sum]
-        dt = ser.dtype 
-        des = ser.describe()
-        if dt == object:
-            levels = list(set(ser))
-            num_levels = len(levels)
-            if num_levels >= 50:
-                st.info(f"""
-                {sample_sum} is a categorical feature with too many factor levels (n = {num_levels}) to describe, 
-                here (probably a desciptive string, and thus, not great plotting feature)
-                """)
-            elif num_levels < 50 and num_levels >=2:
-                
-                all_factors = ", ".join(levels)
-                st.info(f"""
-                {sample_sum} is a categorical feature with the following factor levels to investigate, 
+    if peptide_sum == "Full Table Summary": 
+        buffer = io.StringIO()
+        st.session_state.peptide_table.info(buf=buffer, verbose=True)
+        s = buffer.getvalue()
+        st.text(s)
+    else:
 
-                **{all_factors}**
-
-                Some example query statements:
-
-                > {sample_sum} in ['{levels[0]}', '{levels[1]}', ...]
-
-                > {sample_sum} not in ['{levels[0]}', '{levels[-1]}', ...]
-
-                > {sample_sum} != '{levels[-2]}'
-
-                """)
-
-                f"""
-                ### {sample_sum} Factor level counts
-                """
-                st.write(ser.value_counts())
-            else:
-                st.info(f"""
-                    There's only a single factor level, {levels[0]}, across all samples.
-                """
-                )
-
-        elif dt == bool:
-            st.info(f"""
-                Boolean Feature:
-
-                Some example query statements:
-
-                > {sample_sum} == True
-
-                > {sample_sum} == False
-            """
-            )
-            f"""
-            ### {sample_sum} Factor level counts
-            """
-            st.write(ser.value_counts())
-        else:
-            st.info(f"""
-                Numerical Feature:
-
-                Some example query statements:
-
-                > {sample_sum} >= {des[1]}
-
-            """
-            )
-            f"""
-            ### {sample_sum} Summary
-            """
-            des = ser.describe()
-            st.write(des)
-
-
+        #def string_feature(ds, feature: str, verbosity = 0, dim="peptide"):
+        des = string_feature(
+            ds, 
+            feature= peptide_sum, 
+            verbosity = 0, 
+            dim="peptide"
+        )
+        st.text(des)
 
     """
     ### raw data
@@ -467,17 +347,6 @@ with st.expander('Peptide Table', expanded=peptide_expand):
     st.write(st.session_state.peptide_table)
     st.write('Juicy deets')
 
-#"""
-### Enrichment Matrix
-#"""
-#et_help = st.button("et_help")
-#if et_help:
-#    st.info(f"""
-#        below we summarize the samples in the _current working dataset_
-#    """
-#)
-#if "Heatmap" in selected_types and not st.session_state.clicked_query_type_flag:
-#if "Heatmap" in selected_types: 
 
 enrichment_expand = True if qtype == 'enrichment' else False
 with st.expander('Enrichment Matrix', expanded=enrichment_expand):
@@ -494,9 +363,7 @@ with st.expander('Enrichment Matrix', expanded=enrichment_expand):
     enrichment = st.selectbox(
         "Normalization layer",
         enrichment_options
-    )
-
-    
+    )    
     
 """
 ### Heatmap
@@ -620,7 +487,6 @@ for dt in set(list(subset_ds.data_vars)) - keep_tables:
     del subset_ds[dt]
 
 tall_subset = tidy_ds(subset_ds)
-print(tall_subset)
 
 kwargs = {}
 if domain_max:

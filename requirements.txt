@@ -3,5 +3,5 @@ watchdog
 altair
 pandas
 numpy
-xarray==0.15.1
+xarray
 dask
