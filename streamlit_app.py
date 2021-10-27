@@ -18,11 +18,13 @@ import dask
 import phippery
 from phippery.tidy import tidy_ds
 from phippery.string import string_feature
+from phippery.phipdata import get_annotation_table
 
 # initialize wide view
 st.set_page_config(layout='wide')
 
 
+# initialize session state variables
 if 'query_key_index' not in st.session_state:
     st.session_state.query_key_index = 0 
 
@@ -36,11 +38,11 @@ if 'config' not in st.session_state:
     config = json.load(open("config.json", "r"))
     st.session_state.config = config
 
+req_feats = ["qkey", "expression", "dimension"]
 if 'queries' not in st.session_state:
     st.session_state['queries'] = pd.DataFrame({
-            "qkey": [],
-            "dimension":[], 
-            "expression": []
+            feat : [] 
+            for feat in req_feats
         }).set_index("qkey")
 
 @st.cache(
@@ -49,7 +51,6 @@ if 'queries' not in st.session_state:
     max_entries=10
 )
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
-    #st.write("Xarray data Cache miss")
 
     ds = phippery.load(input_file_path)
     sid, pid = phippery.id_coordinate_from_query(ds, df)
@@ -58,29 +59,45 @@ def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
         peptide_id=pid
     )]
 
-#ph = st.sidebar.empty()
+@st.cache
+def convert_df(df):
+    return df.to_csv(index=False).encode('utf-8')
 
-# TITLE OF THE APP
-# TODO decorate
-st.sidebar.title('Dataset query')
-q_help = st.sidebar.button("?", key="q_help")
-if q_help:
-    st.sidebar.info(f"""
-        Looking at too much data?
-        Overlaping axis groups?
-        Using the sidebar you can _select_, or _remove_ subsets of the current 
-        working dataset.
-        
-        Use the widgets below to apply a condition which subsets the entire dataset.
-    """
-)
+
+def infer_dim(feature):
+    if feature in st.session_state.sample_table.columns:
+        return 'sample'
+    elif feature in st.session_state.peptide_table.columns:
+        return 'peptide'
+    else:
+        raise ValueError(f"{feature} not in either sample or peptide features")
+
+
+def get_reasonable_features(df):
+    reasonable_facet = []
+    for col, data in df.items():
+        l = len(set(data.values))
+        if l < 50:
+            reasonable_facet.append(col)
+    return reasonable_facet
+
 
 #with st.sidebar:
 #    """
-#    The core feature of this app is to first select the subset of the dataset 
-#    which you would like to visualize. Queries are applied using the pandas df
-#    [query heuristic]()
+#    # Upload
 #    """
+#q_help = st.sidebar.button("?", key="q_help")
+#if q_help:
+#    st.sidebar.info(f"""
+#        Looking at too much data?
+#        Overlaping axis groups?
+#        Using the sidebar you can _select_, or _remove_ subsets of the current 
+#        working dataset.
+#        
+#        Use the widgets below to apply a condition which subsets the entire dataset.
+#    """
+#)
+
 st.title('PhIP-Seq Interactive enrichment visualizer (beta)')
 """
 ### Welcome!!
@@ -142,7 +159,9 @@ def add_query_condition(*args, **kwargs):
         st.warning(f"Error: '{e}' -- Condition not applied")
         return
 
-    st.session_state.queries.loc[args[0]] = [args[1], st.session_state[args[0]]]
+    qkey = "q" + args[0].split("-")[1]
+    print("Adding: ", qkey)
+    st.session_state.queries.loc[qkey] = [st.session_state[args[0]], args[1]]
 
 
 def drop_query_condition(*args, **kwargs):
@@ -150,85 +169,78 @@ def drop_query_condition(*args, **kwargs):
     st.session_state.drop_query_key_index += 1
     to_drop = st.session_state[args[0]]
     existing_keys = st.session_state.queries.index.values
+    #if to_drop not in :
     if to_drop not in existing_keys:
         st.warning(f'{to_drop} does not exist with any of the condition keys, non-operation. Existing Keys include: {existing_keys}')
     else:
         st.session_state.queries.drop(to_drop, axis=0, inplace=True)
 
-#def set_input_tables(*args, **kwargs):
-#    pass
-
-# SELECT WHICH FILE TO VIEW
-input_file_list = [
-    f"{fp}" for fp in os.listdir(".")
-    if fp.endswith('.phip')
-]
-selected_input_file = st.sidebar.selectbox(
-    "Input File",
-    input_file_list
-)
-
-qtype = st.sidebar.selectbox(
-        'query type', 
-        ["sample", "peptide"],
-)
-qt_help = st.sidebar.button("?", key="qt_help")
-if qt_help:
-    st.sidebar.info(f"""
-        which axis of the data would you like to subset with a condition?
-        
-        we subset the data by applying a single condition to either of the 
-        sample or peptide axis, _independently_
+with st.sidebar:
     """
-)
-
-num_queries = st.session_state.query_key_index
-num_dropped_queries = st.session_state.drop_query_key_index
-
-# Add Query
-st.sidebar.text_input(
-    label=f"Query Condition",
-    key=f"q{num_queries+1}",
-    on_change=add_query_condition,
-    args=tuple([f"q{num_queries+1}", qtype])
-)
-state_help = st.sidebar.button("?", key="state_help")
-if state_help:
-    st.sidebar.info(f"""
-        Query statements are given in the form:
-        <Feature> <conditional> <feature level>
-
-        The queries follow the pandas 
-        [query heuristic](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.query.html)
-
-        For example statements to subset the {qtype} groups,
-        see the {qtype} drop down in the main console
-        and view the summary for a feature of interest
+    # Upload
     """
-)
-
-
-st.sidebar.dataframe(st.session_state.queries)
-
-# Remove Query
-st.sidebar.text_input(
-    label=f"Remove Condition (by key)",
-    key=f"rm_key_{num_dropped_queries}",
-    on_change=drop_query_condition,
-    args=tuple([f"rm_key_{num_dropped_queries}"])
-)
-remove_help = st.sidebar.button("?", key="remove_help")
-if remove_help:
-    st.sidebar.info(f"""
-        To remove a condition, simply enter the index of the query
-        as show in the dataframe above. i.e. enter 'q0',
-        or replace 0 with the Key (far left index column) 
-        of the condition you wish to "un-apply" from the input dataset
-
-    """
+    # SELECT WHICH FILE TO VIEW
+    input_file_list = [
+        f"{fp}" for fp in os.listdir(".")
+        if fp.endswith('.phip')
+    ]
+    selected_input_file = st.sidebar.selectbox(
+        "Input File",
+        input_file_list
     )
 
-with st.sidebar:
+    num_queries = st.session_state.query_key_index
+    num_dropped_queries = st.session_state.drop_query_key_index
+
+    uploaded_query = st.file_uploader("Upload Query Table")
+    if uploaded_query is not None:
+        queries = pd.read_csv(
+            uploaded_query,
+            header = 0
+        )
+        # TODO
+        #print(f"POST-FILEINPUT: {st.session_state.query_key_index}")
+        ind = [f"q{i}" for i in queries.index.values]
+        queries["qkey"] = ind
+        queries.set_index("qkey", inplace=True)
+        st.session_state.queries = queries
+        st.session_state.query_key_index = len(queries) -1
+        st.info("""
+            Upload complete!
+
+            Note: If you would like to edit the queries table you just loaded in,
+            be sure to hit the 'x' next to the filename above before adding or
+            removing individual queries.
+        """)
+        #print(f"POST-FILE LEN CHANGE: {st.session_state.query_key_index}")
+        uploaded_query=None
+
+    df = copy.deepcopy(st.session_state.queries)
+    ds = load_data(selected_input_file, df)
+    if len(ds.sample_id.values) == 0:
+        raise ValueError(f'Condition file resulted in Zero-length sample table')
+    if len(ds.peptide_id.values) == 0:
+        raise ValueError(f'Condition file resulted in Zero-length peptide table')
+
+    st.session_state['sample_table'] = get_annotation_table(ds)
+    st.session_state['peptide_table'] = get_annotation_table(ds, dim='peptide')
+
+    """
+    # Download
+    """
+
+    # Load data (cached if no change)
+
+
+    csv = convert_df(st.session_state.queries)
+    st.download_button(
+        label="Download queries as CSV",
+        data=csv,
+        file_name='queries.csv',
+        mime='text/csv',
+    )
+
+
     """
     ## Overlab & Matsen
 
@@ -237,30 +249,15 @@ with st.sidebar:
     _Note: ^ placeholder_ 
     """
 
-# Load data (cached if no change)
-df = copy.deepcopy(st.session_state.queries)
-ds = load_data(selected_input_file, df)
-
-#if 'sample_table' not in st.session_state:
-st.session_state['sample_table'] = copy.deepcopy(
-        #ds.sample_table.to_pandas().reset_index().infer_objects().fillna("NA")
-        ds.sample_table.to_pandas().reset_index().convert_dtypes()
-)
-st.session_state['peptide_table'] = copy.deepcopy(
-        #ds.peptide_table.to_pandas().reset_index().infer_objects().fillna("NA")
-        ds.peptide_table.to_pandas().reset_index().convert_dtypes()
-        #ds.peptide_table.to_pandas().reset_index().convert_dtypes()
-)
-
 
 """
-## Current Working Dataset
+***************************************
+## :mag:    View & Select Working Dataset
 """
 ds_help = st.button("?", key="ds_help")
 if ds_help:
     st.info(f"""
-        Each of the expanders (drop down menus;
-        *Enrichments*, *Sample table*, and *Peptide table*), we provide a 
+        Each of the *Sample table*, and *Peptide table*), we provide a 
         summary of the data resulting form the _current working dataset_.
 
         This means you are provided with summary of the data '_post_-sub setting'
@@ -268,114 +265,231 @@ if ds_help:
     """
 )
 
+"""
 
-sample_expand = True if qtype == 'sample' else False
-with st.expander('Sample Table', expanded=sample_expand):
+"""
+
+
+#sample_expand = True if qtype == 'sample' else False
+left_s, right_s = st.columns(2)
+#with st.expander('Sample Table', expanded=False):
+with left_s:
     
     np = len(st.session_state.sample_table)
     f"""
+    ### Sample Table
+
     Total number of samples: {np}
     """
-
-    sample_sum_choices = list(ds.sample_metadata.values)
-    sample_sum = st.selectbox(
-            "Feature summary for:",
-        ["Full Table Summary"]  +sample_sum_choices,
-        0
-    )
-
-    if sample_sum == "Full Table Summary": 
+    
+    with st.expander('+'):
         buffer = io.StringIO()
         st.session_state.sample_table.info(buf=buffer, verbose=True)
         s = buffer.getvalue()
         st.text(s)
-    else:
 
-        #def string_feature(ds, feature: str, verbosity = 0, dim="sample"):
+        s_q = st.session_state.queries
+        st.dataframe(s_q[s_q["dimension"]=="sample"].drop("dimension",axis=1, inplace=False))
+
+        """
+        **Tell me more about** :point_down:
+        """
+
+        sample_sum_choices = list(ds.sample_metadata.values)
+        sample_sum = st.selectbox(
+            "Feature summary for:",
+            sample_sum_choices,
+            0
+        )
+
+        s_dtype = st.session_state.sample_table.dtypes[sample_sum]
+        s_uniq = len(set(st.session_state.sample_table[sample_sum]))
+        s_kwargs={}
+        if s_dtype in [pd.Int64Dtype(), pd.Float64Dtype()] and s_uniq < 50:
+            view = st.radio(
+                    "Sample feature display options:", 
+                    ["Quantiles", "Value Counts"])
+            s_kwargs["numeric_dis"] = (view=="Quantiles")
         des = string_feature(
             ds, 
             feature= sample_sum, 
             verbosity = 0, 
-            dim="sample"
+            dim="sample",
+            **s_kwargs
         )
         st.text(des)
 
-    """
-    ------------------------------------------------------------
-    ### Full sample table
-    """
+        """
+        **Apply a query condition to current sample table** :point_down:
+        """
+        # Add Query
+        st.text_input(
+            label=f"Sample Query Condition",
+            key=f"sq-{num_queries+1}",
+            on_change=add_query_condition,
+            args=tuple([f"sq-{num_queries+1}", "sample"])
+        )
 
-    st.write(st.session_state.sample_table)
-    st.write('Juicy deets')
+
+        """
+        **Remove (using row index key) a query condition from the current sample table** :point_down:
+        """
+        
+        # Remove Query
+        st.text_input(
+            label=f"Remove Sample Condition (by key)",
+            key=f"rm_s_key_{num_dropped_queries}",
+            on_change=drop_query_condition,
+            args=tuple([f"rm_s_key_{num_dropped_queries}"])
+        )
+
+        """
+        **Click below to see the raw sample annotation table** :point_down:
+        """
+        st.write(st.session_state.sample_table)
 
 
-peptide_expand = True if qtype == 'peptide' else False
-with st.expander('Peptide Table', expanded=peptide_expand):
+####################################
+
+with right_s:
     
     np = len(st.session_state.peptide_table)
     f"""
+    ### Peptide Table
+
     Total number of peptides: {np}
     """
+    with st.expander('+'):
 
-    peptide_sum_choices = list(ds.peptide_metadata.values)
-    peptide_sum = st.selectbox(
-            "Feature summary for:",
-        ["Full Table Summary"]  +peptide_sum_choices,
-        0
-    )
-
-    if peptide_sum == "Full Table Summary": 
         buffer = io.StringIO()
         st.session_state.peptide_table.info(buf=buffer, verbose=True)
         s = buffer.getvalue()
         st.text(s)
-    else:
 
-        #def string_feature(ds, feature: str, verbosity = 0, dim="peptide"):
+        p_q = st.session_state.queries
+        st.dataframe(p_q[p_q["dimension"]=="peptide"].drop("dimension",axis=1,inplace=False))
+
+        """
+        **Tell me more about** :point_down:
+        """
+
+        peptide_sum_choices = list(ds.peptide_metadata.values)
+        peptide_sum = st.selectbox(
+            "Feature summary for:",
+            peptide_sum_choices,
+            0
+        )
+
+        dtype = st.session_state.peptide_table.dtypes[peptide_sum]
+        p_uniq = len(set(st.session_state.peptide_table[peptide_sum]))
+        p_kwargs={}
+        if dtype in [pd.Int64Dtype(), pd.Float64Dtype()] and p_uniq < 50:
+            view = st.radio(
+                    "Peptide features display options", 
+                    ["Quantiles", "Value Counts"])
+            p_kwargs["numeric_dis"] = (view=="Quantiles")
+
         des = string_feature(
             ds, 
             feature= peptide_sum, 
             verbosity = 0, 
-            dim="peptide"
+            dim="peptide",
+            **p_kwargs
         )
         st.text(des)
 
-    """
-    ### raw data
-    """
+        """
+        **Apply a query condition to current peptide table** :point_down:
+        """
+        # Add Query
+        st.text_input(
+            label=f"Peptide Query Condition",
+            key=f"pq-{num_queries+1}",
+            on_change=add_query_condition,
+            args=tuple([f"pq-{num_queries+1}", "peptide"])
+        )
 
-    st.write(st.session_state.peptide_table)
-    st.write('Juicy deets')
+        """
+        **Remove (using row index key) a query condition from the current peptide table** :point_down:
+        """
+        
+        # Remove Query
+        st.text_input(
+            label=f"Remove Peptide Condition (by key)",
+            key=f"rm_p_key_{num_dropped_queries}",
+            on_change=drop_query_condition,
+            args=tuple([f"rm_p_key_{num_dropped_queries}"])
+        )
 
+        """
+        **Click below to see the raw peptide annotation table** :point_down:
+        """
+        st.write(st.session_state.peptide_table)
 
-enrichment_expand = True if qtype == 'enrichment' else False
-with st.expander('Enrichment Matrix', expanded=enrichment_expand):
-    st.info(f"""
-        This section is under construction, for now, select the enrichment transformation
-        you would like to visualize
-    """)
-
-    enrichment_options = []
-    for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
-        if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
-            enrichment_options.append(dt)
-
-    enrichment = st.selectbox(
-        "Normalization layer",
-        enrichment_options
-    )    
-    
 """
-### Heatmap
+***************************************
+## :fire:    Visualize Enrichment Heatmap
+Here, you can select options for rendering a heatmap based upon the samples-peptide enrichments available 
+(as described in the tables above)
 """
 
-with st.expander("Heatmap settings"):
+settings, viz = st.columns([1,3])
+
+#with st.expander("Heatmap settings"):
+with settings:
     with st.form("dt"):
-        st.write(f"")
+
+        """
+        **Enrichment Layer** - select which enrichment transformation layer 
+        you would like to visualize
+        """
+
+        enrichment_options = []
+        for dt in set(list(ds.data_vars)) - set(["sample_table", "peptide_table"]):
+            if ds[dt].values.flatten().min() != ds[dt].values.flatten().max():
+                enrichment_options.append(dt)
+
+        enrichment = st.selectbox(
+            "Normalization layer",
+            enrichment_options
+        )    
+
     
+        """
+        **Sample Groups** - select which sample annotation groups would you like on the *y-axis*
+        """
+        
+        # How to group the samples
+        y_choices = list(ds.sample_metadata.values)
+        index=0
+        if "patient_status" in y_choices:
+            index=y_choices.index("patient_status") + 1
+        y = st.selectbox(
+            "y-axis sample feature",
+            ["sample_id"] + y_choices,
+            index=index
+        )
     
+        """
+        **Peptide Groups** - select which peptide annotation groups you would like on the *x-axis*
+        """
+    
+        x_choices = list(ds.peptide_metadata.values)
+        index=0
+        if "Protein" in x_choices:
+            index=x_choices.index("Protein") + 1
+        x = st.selectbox(
+            "x-axis peptide feature",
+            ["peptide_id"] + x_choices,
+            index=index
+        )
+
+        """
+        **Aggregation function** - when selecting axis which may group individual sample-peptide, how would you like to
+        summarize the groups within a single entry in the resulting heatmap.
+        """
+        
         agg_func_choices = [
-                "average", 
                 "max", 
                 "mean",
                 "median",
@@ -391,128 +505,134 @@ with st.expander("Heatmap settings"):
         )
     
         """
-        ## IP Observation groups
-    
-        Select how you would like to aggregate and group IP observation annotation
-        groups.
+        **Split groups** Split the vizualization into groups (subplots).
         """
+
+        #index=0
+        r_s = get_reasonable_features(st.session_state.sample_table)
+        r_p = get_reasonable_features(st.session_state.peptide_table)
+        facet_choices = r_s + r_p
+        #print(facet_choices)
         
-        """
-        select which feature would you like to plot on the **y-axis**
-        """
-    
-        # How to group the samples
-        y_choices = list(ds.sample_metadata.values)
-        index=0
-        if "patient_status" in y_choices:
-            index=y_choices.index("patient_status") + 1
-        y = st.selectbox(
-            "y-axis sample feature",
-            ["sample_id"] + y_choices,
-            index=index
-        )
-    
-        #"""
-        #select which sample feature would you like to use for a **column** facet
-        #"""
-    
-        #sample_facet_choices = list(ds.sample_metadata.values)
-        #sample_facet = st.selectbox(
-        #    "Facet feature",
-        #    ["None"] + sample_facet_choices,
-        #    index=0
-        #)
-    
-        """
-        ## Peptide Observation groups
-    
-        Select how you would like to aggregate and group peptide annotation
-        groups.
-        """
-    
-        """
-        select which feature would you like to plot on the **x-axis**
-        """
-    
-        x_choices = list(ds.peptide_metadata.values)
-        index=0
-        if "Protein" in x_choices:
-            index=x_choices.index("Protein") + 1
-        x = st.selectbox(
-            "x-axis peptide feature",
-            ["peptide_id"] + x_choices,
-            index=index
-        )
-    
-        """
-        select which peptide feature would you like to use for a **row** facet
-        """
-    
-        peptide_facet_choices = list(ds.peptide_metadata.values)
-        index=0
-        if "Virus" in x_choices:
-            index=peptide_facet_choices.index("Virus") + 1
-        peptide_facet = st.selectbox(
+        facet_features = st.multiselect(
             "Facet feature",
-            ["None"] + peptide_facet_choices,
-            index=index
+            ["None"] + facet_choices,
         )
+        #print(facet_features)
     
         domain_max = st.number_input("domain max")
-        submitted = st.form_submit_button("Render Heatmap")
+        heatmap_render = st.form_submit_button("Render Heatmap")
+
+with viz:
+    if heatmap_render:
+        # TODO, we'll want to check the axis they've chosen
+        # are unique or throw a warning??
+        sm = [y] if y != 'sample_id' else []
+        pm = [x] if x != 'peptide_id' else []
+        
+        for f in facet_features:
+            if infer_dim(f) == 'sample':
+                sm.append(f)
+            else:
+                pm.append(f)
+        
+        # throw out all things we don't care about before 
+        # creating the tall dataframe (quite memory expensive)
+        subset_ds = copy.deepcopy(ds.loc[
+            dict(
+                sample_metadata = sm,
+                peptide_metadata = pm
+            )
+        ])
+        
+        keep_tables = set(["sample_table", "peptide_table", enrichment])
+        for dt in set(list(subset_ds.data_vars)) - keep_tables:
+            del subset_ds[dt]
+       
+        tds = tidy_ds(subset_ds)
+
+        kwargs = {}
+        if domain_max:
+            kwargs["scale"] = alt.Scale(domain=[0, domain_max])
+        color = alt.Color(f'{agg_func}({enrichment}):Q', **kwargs)
+
+        if len(facet_features) > 0:
+            for group, group_df in tds.groupby(facet_features):
+                if len(facet_features) == 1:
+                    title = f"{facet_features[0]}: {group}"
+                else:
+                    title = []
+                    for j in range(len(facet_features)):
+                        title.append(f"{facet_features[j]}: {group[j]}")
+
+            
+                c = alt.Chart(group_df).mark_rect().encode(
+                    x=alt.X(
+                        f'{x}:O', 
+                        axis=alt.Axis(labelOverlap=True)
+                    ),
+                    y=alt.Y(
+                        f'{y}:O', 
+                        axis=alt.Axis(labelOverlap=True)
+                    ),
+                    color=color,
+                    tooltip = [
+                        alt.Tooltip(f'{agg_func}({enrichment}):O'),
+                        alt.Tooltip(f'count({enrichment}):O'),
+                    ]
+                ).properties(
+                    width=1000,
+                    title=title
+                )
+                #base.save("test-plot.png")
+                
+                #if len(facet_features) > 0:
+                    #c = c.facet(row=facet_col_name).resolve_scale(y='independent')
+                    #c = c.facet(row=facet_col_name, title=None)
+
+                st.altair_chart(c, use_container_width=True)
+            #chart = alt.hconcat()
+            #for group, data in  
+            #    chart |= base.transform_filter(
+            #            datum.species == species
+            #    )
+        else:
+            #print("group:", group)
+            #title=" ".join([group])
+            #print("title:", title)
+
+        
+            c = alt.Chart(tds).mark_rect().encode(
+                x=alt.X(
+                    f'{x}:O', 
+                    axis=alt.Axis(labelOverlap=True)
+                ),
+                y=alt.Y(
+                    f'{y}:O', 
+                    axis=alt.Axis(labelOverlap=True)
+                ),
+                color=color,
+                tooltip = [
+                    alt.Tooltip(f'{agg_func}({enrichment}):O'),
+                    alt.Tooltip(f'count({enrichment}):O'),
+                ]
+            ).properties(
+                width=1000,
+            )
+            #base.save("test-plot.png")
+            
+            #if len(facet_features) > 0:
+                #c = c.facet(row=facet_col_name).resolve_scale(y='independent')
+                #c = c.facet(row=facet_col_name, title=None)
+
+            st.altair_chart(c, use_container_width=True)
+        #chart = alt.hconcat()
+        #for group, data in  
+        #    chart |= base.transform_filter(
+        #            datum.species == species
+        #    )
 
 
-#with right_column:
 
-#if submitted:
-# TODO, we'll want to check the axis they've chosen
-# are unique or throw a warning??
-sm = [y] if y != 'sample_id' else []
-pm = [x] if x != 'peptide_id' else []
+        
 
-pm = pm + [peptide_facet] if peptide_facet != 'None' else pm
-#sm = sm + [sample_facet] if sample_facet != 'None' else sm
-
-# throw out all things we don't care about before 
-# creating the tall dataframe (quite memory expensive)
-subset_ds = copy.deepcopy(ds.loc[
-    dict(
-        sample_metadata = sm,
-        peptide_metadata = pm
-    )
-])
-
-keep_tables = set(["sample_table", "peptide_table", enrichment])
-for dt in set(list(subset_ds.data_vars)) - keep_tables:
-    del subset_ds[dt]
-
-tall_subset = tidy_ds(subset_ds)
-
-kwargs = {}
-if domain_max:
-    kwargs["scale"] = alt.Scale(domain=[0, domain_max])
-color = alt.Color(f'{agg_func}({enrichment}):Q', **kwargs)
-
-c = alt.Chart(tall_subset).mark_rect().encode(
-    x=alt.X(f'{x}:O'),
-    y=alt.Y(f'{y}:O'),
-    color=color,
-    tooltip = [
-        alt.Tooltip(f'{agg_func}({enrichment}):O'),
-        alt.Tooltip(f'count({enrichment}):O'),
-    ]
-).properties(
-    width=1000
-)
-
-facet_kwargs = {}
-if peptide_facet != "None":
-    facet_kwargs["row"] = peptide_facet
-#if sample_facet != "None":
-#    facet_kwargs["column"] = sample_facet
-#facet_kwargs["bounds"] = "flush"
-
-if len(facet_kwargs) >= 1:
-    c = c.facet(**facet_kwargs)
-
-st.altair_chart(c, use_container_width=False)
