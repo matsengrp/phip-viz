@@ -22,7 +22,7 @@ from phippery.phipdata import get_annotation_table
 
 # initialize wide view
 st.set_page_config(layout='wide')
-
+#st.write(st.__version__)
 
 # initialize session state variables
 if 'query_key_index' not in st.session_state:
@@ -34,9 +34,9 @@ if 'drop_query_key_index' not in st.session_state:
 if 'view_annotations' not in st.session_state:
     st.session_state.view_samples = False
 
-if 'config' not in st.session_state:
-    config = json.load(open("config.json", "r"))
-    st.session_state.config = config
+#if 'config' not in st.session_state:
+#    config = json.load(open("config.json", "r"))
+#    st.session_state.config = config
 
 req_feats = ["qkey", "expression", "dimension"]
 if 'queries' not in st.session_state:
@@ -45,11 +45,15 @@ if 'queries' not in st.session_state:
             for feat in req_feats
         }).set_index("qkey")
 
-@st.cache(
-    hash_funcs={xr.core.dataset.Dataset: dask.base.tokenize}, 
-    suppress_st_warning=True,
-    max_entries=10
-)
+#@st.cache(
+#    hash_funcs={
+#        xr.core.dataset.Dataset: dask.base.tokenize,
+#        pd.core.frame.DataFrame: dask.base.tokenize,
+#        pd.core.frame.Series: dask.base.tokenize,
+#    }, 
+#    suppress_st_warning=True,
+#    max_entries=10
+#)
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
 
     ds = phippery.load(input_file_path)
@@ -72,7 +76,6 @@ def infer_dim(feature):
     else:
         raise ValueError(f"{feature} not in either sample or peptide features")
 
-
 def get_reasonable_features(df):
     reasonable_facet = []
     for col, data in df.items():
@@ -80,7 +83,6 @@ def get_reasonable_features(df):
         if l < 50:
             reasonable_facet.append(col)
     return reasonable_facet
-
 
 #with st.sidebar:
 #    """
@@ -160,7 +162,7 @@ def add_query_condition(*args, **kwargs):
         return
 
     qkey = "q" + args[0].split("-")[1]
-    print("Adding: ", qkey)
+    #print("Adding: ", qkey)
     st.session_state.queries.loc[qkey] = [st.session_state[args[0]], args[1]]
 
 
@@ -213,9 +215,10 @@ with st.sidebar:
             removing individual queries.
         """)
         #print(f"POST-FILE LEN CHANGE: {st.session_state.query_key_index}")
-        uploaded_query=None
+        #uploaded_query=None
 
     df = copy.deepcopy(st.session_state.queries)
+    #st.text(type(df))
     ds = load_data(selected_input_file, df)
     if len(ds.sample_id.values) == 0:
         raise ValueError(f'Condition file resulted in Zero-length sample table')
