@@ -12,16 +12,17 @@ import altair as alt
 from altair_saver import save
 alt.data_transformers.disable_max_rows()
 #from vega_datasets import data
+import phippery
+from phippery.utils import *
 
 import streamlit as st
 import xarray as xr
 import pandas as pd
 import numpy as np
 import dask
-import phippery
-from phippery.tidy import tidy_ds
-from phippery.string import string_feature
-from phippery.phipdata import get_annotation_table
+#from phippery.tidy import tidy_ds
+#from phippery.string import string_feature
+#from phippery.phipdata import get_annotation_table
 
 # initialize wide view
 st.set_page_config(layout='wide')
@@ -50,6 +51,21 @@ if 'queries' not in st.session_state:
             for feat in req_feats
         }).set_index("qkey")
 
+def id_coordinate_from_query(ds, query_df):
+
+    """
+    Given a df with columns 'dimension' and 
+    """
+
+    # st = ds.sample_table.to_pandas().infer_objects()
+    sq = list(query_df.loc[query_df["dimension"] == "sample", "expression"].values)
+    sid = sample_id_coordinate_from_query(ds, sq)
+
+    # pt = ds.peptide_table.to_pandas().infer_objects()
+    pq = list(query_df.loc[query_df["dimension"] == "peptide", "expression"].values)
+    pid = peptide_id_coordinate_from_query(ds, pq)
+
+    return sid, pid
 
 
 #@st.cache(
@@ -61,8 +77,8 @@ if 'queries' not in st.session_state:
 #)
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
 
-    ds = phippery.load(input_file_path)
-    sid, pid = phippery.id_coordinate_from_query(ds, df)
+    ds = load(input_file_path)
+    sid, pid = id_coordinate_from_query(ds, df)
     return ds.loc[dict(
         sample_id=sid,
         peptide_id=pid
@@ -108,9 +124,7 @@ def get_reasonable_features(df):
 st.title('PhIP-Seq Interactive enrichment visualizer (beta)')
 """
 ### Welcome!!
-
 *To get started, select a dataset file from the options in the sidebar to the left.*
-
 :point_down: More info!
 """
 
@@ -121,24 +135,19 @@ if g_help:
         from a set of Phage Immuno Precipitation (PhIP-Seq) experiments. 
         The options in the app are defined by the sample and peptides tables used to 
         produce the enrichment matrix. 
-
         The general idea is that you choose the subset of the dataset you're interested in,
         (using the query tools in the sidebar) and then decide how you would like to 
         aggregate (or not) the enrichments of annotation groups as determined by the 
         sample or peptide tables. Use the drop-down menus below to see sub setting options
         for any feature of interest.
-
         This visualization app is part of the *phippery suite* of tools.
         For more information about the data format, the 
         [documentation](https://matsengrp.github.io/phippery/introduction.html) 
         will provide more insight into how to create input from your own data, or obtain 
         example data to play with.
-
         **A few notes**
-
         1. The queries are not save if the page refreshes. We will soon allow users
             to upload/download query tables for convenience
-
         2. The application was built to be as flexible as possible with respect to the 
             types of phage libraries that may be used as input. That being the case, we
             expect that a range of inputs might not produce sensible visualizations.
@@ -214,7 +223,6 @@ with st.sidebar:
         st.session_state.query_key_index = len(queries) -1
         st.info("""
             Upload complete!
-
             Note: If you would like to edit the queries table you just loaded in,
             be sure to hit the 'x' next to the filename above before adding or
             removing individual queries.
@@ -251,9 +259,7 @@ with st.sidebar:
 
     """
     ## Overlab & Matsen
-
     NSF, NIH, HHMI
-
     _Note: ^ placeholder_ 
     """
 
@@ -267,7 +273,6 @@ if ds_help:
     st.info(f"""
         Each of the *Sample table*, and *Peptide table*), we provide a 
         summary of the data resulting form the _current working dataset_.
-
         This means you are provided with summary of the data '_post_-sub setting'
         each time you subset the data using the sidebar tools to the left,
     """
@@ -286,7 +291,6 @@ with left_s:
     np = len(st.session_state.sample_table)
     f"""
     ### Sample Table
-
     Total number of samples: {np}
     """
     #def switch_s_expander():
@@ -372,7 +376,6 @@ with right_s:
     np = len(st.session_state.peptide_table)
     f"""
     ### Peptide Table
-
     Total number of peptides: {np}
     """
     with st.expander("Working Peptides"):
@@ -482,7 +485,6 @@ with settings:
                 Click on the Advanceds options setting
                 to be able to apply either sample
                 or peptide features on *both* axis.
-
                 Use with caution this usually
                 does not produce sensible vizualizations
             """)
@@ -609,7 +611,7 @@ with viz:
         for dt in set(list(subset_ds.data_vars)) - keep_tables:
             del subset_ds[dt]
        
-        tds = tidy_ds(subset_ds)
+        tds = to_tidy(subset_ds)
 
         scale_args = {}
         if domain_max and not domain_min:
@@ -693,8 +695,3 @@ with viz:
             )
 
             st.altair_chart(c, use_container_width=True)
-
-
-
-        
-

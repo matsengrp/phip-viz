@@ -1,6 +1,7 @@
 streamlit>=0.83.0
 watchdog
 altair
+altair_saver
 pandas
 numpy
 xarray
