@@ -1,7 +1,11 @@
 # phip-viz
 Visualization of PhIPseq datasets
 
-## Install Prerequisites
+## Using with Docker.
+We have containerized both phip-viz and [phippery]()
+
+
+## Install Prerequisites locally
 
 To install prerequisites, first set up a python3 virtual environment:
 
@@ -17,7 +21,7 @@ source venv/bin/activate
 python3 -m pip install -r $REPO_FOLDER/requirements.txt
 
 # Install phippery
-python -m pip install git+https://github.com/matsengrp/phippery.git@52b8c5fcd0c4c727fe760b17a3820a60eada2bf3
+python -m pip install git+https://github.com/matsengrp/phippery.git@416406d693aaf0c5d15893fb2755e3c66648c8c0 
 ```
 
 ## Launch the app

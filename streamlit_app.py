@@ -8,6 +8,9 @@ import json
 import io
 
 import altair as alt
+#alt.renderers.enable('altair_saver', fmts=['png', 'pdf'])
+from altair_saver import save
+alt.data_transformers.disable_max_rows()
 #from vega_datasets import data
 
 import streamlit as st
@@ -34,9 +37,11 @@ if 'drop_query_key_index' not in st.session_state:
 if 'view_annotations' not in st.session_state:
     st.session_state.view_samples = False
 
-#if 'config' not in st.session_state:
-#    config = json.load(open("config.json", "r"))
-#    st.session_state.config = config
+#if 'sample_ex_switch' not in st.session_state:
+#    st.session_state.sample_ex_switch = False
+#
+#if 'peptide_ex_switch' not in st.session_state:
+#    st.session_state.peptide_ex_switch = False
 
 req_feats = ["qkey", "expression", "dimension"]
 if 'queries' not in st.session_state:
@@ -45,11 +50,11 @@ if 'queries' not in st.session_state:
             for feat in req_feats
         }).set_index("qkey")
 
+
+
 #@st.cache(
 #    hash_funcs={
 #        xr.core.dataset.Dataset: dask.base.tokenize,
-#        pd.core.frame.DataFrame: dask.base.tokenize,
-#        pd.core.frame.Series: dask.base.tokenize,
 #    }, 
 #    suppress_st_warning=True,
 #    max_entries=10
@@ -268,9 +273,9 @@ if ds_help:
     """
 )
 
-"""
-
-"""
+#"""
+#
+#"""
 
 
 #sample_expand = True if qtype == 'sample' else False
@@ -284,8 +289,16 @@ with left_s:
 
     Total number of samples: {np}
     """
-    
-    with st.expander('+'):
+    #def switch_s_expander():
+    #    st.session_state.sample_ex_switch = not st.session_state.sample_ex_switch
+
+    #sample_ex = st.expander("sample_expander",
+    #        expanded = st.session_state.sample_ex_switch
+    #)
+    #clicked = sample_ex.button("View & Edit Samples", on_click=switch_s_expander)
+    #with sample_ex:
+    with st.expander("Working Samples"):
+
         buffer = io.StringIO()
         st.session_state.sample_table.info(buf=buffer, verbose=True)
         s = buffer.getvalue()
@@ -362,7 +375,7 @@ with right_s:
 
     Total number of peptides: {np}
     """
-    with st.expander('+'):
+    with st.expander("Working Peptides"):
 
         buffer = io.StringIO()
         st.session_state.peptide_table.info(buf=buffer, verbose=True)
@@ -461,12 +474,33 @@ with settings:
         """
         **Sample Groups** - select which sample annotation groups would you like on the *y-axis*
         """
+        adv_help = st.sidebar.button("?", key="q_help")
+        #p_kwargs["numeric_dis"] = (view=="Quantiles")
+
+        if adv_help:
+            st.info("""
+                Click on the Advanceds options setting
+                to be able to apply either sample
+                or peptide features on *both* axis.
+
+                Use with caution this usually
+                does not produce sensible vizualizations
+            """)
+        adv = st.radio(
+                "Advanced axis options", 
+                ["On", "Off"],
+                index=1
+        )
         
-        # How to group the samples
-        y_choices = list(ds.sample_metadata.values)
+       # How to group the samples
         index=0
-        if "patient_status" in y_choices:
-            index=y_choices.index("patient_status") + 1
+        y_choices = list(ds.sample_metadata.values)
+        
+        if adv == "On":
+            y_choices += list(ds.peptide_metadata.values)
+
+        #if "patient_status" in y_choices:
+        #    index=y_choices.index("patient_status") + 1
         y = st.selectbox(
             "y-axis sample feature",
             ["sample_id"] + y_choices,
@@ -477,15 +511,22 @@ with settings:
         **Peptide Groups** - select which peptide annotation groups you would like on the *x-axis*
         """
     
-        x_choices = list(ds.peptide_metadata.values)
         index=0
-        if "Protein" in x_choices:
-            index=x_choices.index("Protein") + 1
+        x_choices = list(ds.peptide_metadata.values)
+        #if "Protein" in x_choices:
+        #    index=x_choices.index("Protein") + 1
+
+
+        if adv == "On":
+            x_choices += list(ds.sample_metadata.values)
+
         x = st.selectbox(
             "x-axis peptide feature",
             ["peptide_id"] + x_choices,
             index=index
         )
+
+        #if x == y: st.warning("")
 
         """
         **Aggregation function** - when selecting axis which may group individual sample-peptide, how would you like to
@@ -522,22 +563,38 @@ with settings:
             ["None"] + facet_choices,
         )
         #print(facet_features)
+
+        centered = st.radio(
+                "centered at 0", 
+                ["On", "Off"],
+                index=1
+        )
     
         domain_max = st.number_input("domain max")
+        domain_min = st.number_input("domain min")
+        #zmid = st.button("zero centered color")
+
+        save_dir = st.text_input(label=f"save directory")
+
+        #domain_max = st.number_input("domain max")
         heatmap_render = st.form_submit_button("Render Heatmap")
 
 with viz:
     if heatmap_render:
         # TODO, we'll want to check the axis they've chosen
         # are unique or throw a warning??
-        sm = [y] if y != 'sample_id' else []
-        pm = [x] if x != 'peptide_id' else []
-        
-        for f in facet_features:
+        yss = [y] if y != 'sample_id' else []
+        xss = [x] if x != 'peptide_id' else []
+        sm, pm = [], []
+        for f in facet_features + xss + yss:
+            
             if infer_dim(f) == 'sample':
                 sm.append(f)
             else:
                 pm.append(f)
+
+        #print(f"sample metadata: {sm}")
+        #print(f"peptide metadata: {pm}")
         
         # throw out all things we don't care about before 
         # creating the tall dataframe (quite memory expensive)
@@ -554,9 +611,19 @@ with viz:
        
         tds = tidy_ds(subset_ds)
 
+        scale_args = {}
+        if domain_max and not domain_min:
+            scale_args["domain"] = [0, domain_max]
+        elif not domain_max and domain_min:
+            scale_args["domain"] = [domain_min, 0]
+        elif domain_max and domain_min:
+            scale_args["domain"] = [domain_min, domain_max]
+
+        if centered == "On":
+            scale_args["domainMid"] = 0
+
         kwargs = {}
-        if domain_max:
-            kwargs["scale"] = alt.Scale(domain=[0, domain_max])
+        kwargs["scale"] = alt.Scale(**scale_args) if len(scale_args) != 0 else {}
         color = alt.Color(f'{agg_func}({enrichment}):Q', **kwargs)
 
         if len(facet_features) > 0:
@@ -594,15 +661,17 @@ with viz:
                     #c = c.facet(row=facet_col_name, title=None)
 
                 st.altair_chart(c, use_container_width=True)
+                if save_dir:
+                    group_state = [group] if type(group) != tuple else group
+                    group_state = [str(gs) for gs in group_state]
+                    if not os.path.exists(save_dir): os.mkdir(save_dir)
+                    save(c, os.path.join(save_dir, "-".join(group_state))+".png")
             #chart = alt.hconcat()
             #for group, data in  
             #    chart |= base.transform_filter(
             #            datum.species == species
             #    )
         else:
-            #print("group:", group)
-            #title=" ".join([group])
-            #print("title:", title)
 
         
             c = alt.Chart(tds).mark_rect().encode(
@@ -622,18 +691,8 @@ with viz:
             ).properties(
                 width=1000,
             )
-            #base.save("test-plot.png")
-            
-            #if len(facet_features) > 0:
-                #c = c.facet(row=facet_col_name).resolve_scale(y='independent')
-                #c = c.facet(row=facet_col_name, title=None)
 
             st.altair_chart(c, use_container_width=True)
-        #chart = alt.hconcat()
-        #for group, data in  
-        #    chart |= base.transform_filter(
-        #            datum.species == species
-        #    )
 
 
 
