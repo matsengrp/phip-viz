@@ -21,7 +21,7 @@ import pandas as pd
 import numpy as np
 import dask
 #from phippery.tidy import tidy_ds
-#from phippery.string import string_feature
+from phippery.string import string_feature
 #from phippery.phipdata import get_annotation_table
 
 # initialize wide view
@@ -68,13 +68,13 @@ def id_coordinate_from_query(ds, query_df):
     return sid, pid
 
 
-#@st.cache(
-#    hash_funcs={
-#        xr.core.dataset.Dataset: dask.base.tokenize,
-#    }, 
-#    suppress_st_warning=True,
-#    max_entries=10
-#)
+@st.cache(
+    hash_funcs={
+        xr.core.dataset.Dataset: dask.base.tokenize,
+    }, 
+    suppress_st_warning=True,
+    max_entries=10
+)
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
 
     ds = load(input_file_path)
