@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 
-# https://share.streamlit.io/1edv/evolution/app/app.py
-
 import copy
 import os
 import json
 import io
 
 import altair as alt
-#alt.renderers.enable('altair_saver', fmts=['png', 'pdf'])
 from altair_saver import save
 alt.data_transformers.disable_max_rows()
-#from vega_datasets import data
 import phippery
 from phippery.utils import *
 
@@ -20,13 +16,10 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 import dask
-#from phippery.tidy import tidy_ds
 from phippery.string import string_feature
-#from phippery.phipdata import get_annotation_table
 
 # initialize wide view
 st.set_page_config(layout='wide')
-#st.write(st.__version__)
 
 # initialize session state variables
 if 'query_key_index' not in st.session_state:
@@ -37,12 +30,6 @@ if 'drop_query_key_index' not in st.session_state:
 
 if 'view_annotations' not in st.session_state:
     st.session_state.view_samples = False
-
-#if 'sample_ex_switch' not in st.session_state:
-#    st.session_state.sample_ex_switch = False
-#
-#if 'peptide_ex_switch' not in st.session_state:
-#    st.session_state.peptide_ex_switch = False
 
 req_feats = ["qkey", "expression", "dimension"]
 if 'queries' not in st.session_state:
@@ -57,11 +44,9 @@ def id_coordinate_from_query(ds, query_df):
     Given a df with columns 'dimension' and 
     """
 
-    # st = ds.sample_table.to_pandas().infer_objects()
     sq = list(query_df.loc[query_df["dimension"] == "sample", "expression"].values)
     sid = sample_id_coordinate_from_query(ds, sq)
 
-    # pt = ds.peptide_table.to_pandas().infer_objects()
     pq = list(query_df.loc[query_df["dimension"] == "peptide", "expression"].values)
     pid = peptide_id_coordinate_from_query(ds, pq)
 
@@ -105,23 +90,7 @@ def get_reasonable_features(df):
             reasonable_facet.append(col)
     return reasonable_facet
 
-#with st.sidebar:
-#    """
-#    # Upload
-#    """
-#q_help = st.sidebar.button("?", key="q_help")
-#if q_help:
-#    st.sidebar.info(f"""
-#        Looking at too much data?
-#        Overlaping axis groups?
-#        Using the sidebar you can _select_, or _remove_ subsets of the current 
-#        working dataset.
-#        
-#        Use the widgets below to apply a condition which subsets the entire dataset.
-#    """
-#)
-
-st.title('PhIP-Seq Interactive enrichment visualizer (beta)')
+st.title('PhIP-Seq Interactive enrichment visualizer')
 """
 ### Welcome!!
 *To get started, select a dataset file from the options in the sidebar to the left.*
@@ -185,7 +154,6 @@ def drop_query_condition(*args, **kwargs):
     st.session_state.drop_query_key_index += 1
     to_drop = st.session_state[args[0]]
     existing_keys = st.session_state.queries.index.values
-    #if to_drop not in :
     if to_drop not in existing_keys:
         st.warning(f'{to_drop} does not exist with any of the condition keys, non-operation. Existing Keys include: {existing_keys}')
     else:
@@ -195,7 +163,6 @@ with st.sidebar:
     """
     # Upload
     """
-    # SELECT WHICH FILE TO VIEW
     input_file_list = [
         f"{fp}" for fp in os.listdir(".")
         if fp.endswith('.phip')
@@ -214,8 +181,6 @@ with st.sidebar:
             uploaded_query,
             header = 0
         )
-        # TODO
-        #print(f"POST-FILEINPUT: {st.session_state.query_key_index}")
         ind = [f"q{i}" for i in queries.index.values]
         queries["qkey"] = ind
         queries.set_index("qkey", inplace=True)
@@ -227,11 +192,8 @@ with st.sidebar:
             be sure to hit the 'x' next to the filename above before adding or
             removing individual queries.
         """)
-        #print(f"POST-FILE LEN CHANGE: {st.session_state.query_key_index}")
-        #uploaded_query=None
 
     df = copy.deepcopy(st.session_state.queries)
-    #st.text(type(df))
     ds = load_data(selected_input_file, df)
     if len(ds.sample_id.values) == 0:
         raise ValueError(f'Condition file resulted in Zero-length sample table')
@@ -245,9 +207,6 @@ with st.sidebar:
     # Download
     """
 
-    # Load data (cached if no change)
-
-
     csv = convert_df(st.session_state.queries)
     st.download_button(
         label="Download queries as CSV",
@@ -258,9 +217,9 @@ with st.sidebar:
 
 
     """
-    ## Overlab & Matsen
-    NSF, NIH, HHMI
-    _Note: ^ placeholder_ 
+    ## Overbaugh & Matsen Labs,
+    ## Fred Hutchinson CC, Seattle WA.
+    Thanks to funding from NSF, NIH, HHMI
     """
 
 
@@ -278,14 +237,7 @@ if ds_help:
     """
 )
 
-#"""
-#
-#"""
-
-
-#sample_expand = True if qtype == 'sample' else False
 left_s, right_s = st.columns(2)
-#with st.expander('Sample Table', expanded=False):
 with left_s:
     
     np = len(st.session_state.sample_table)
@@ -293,14 +245,6 @@ with left_s:
     ### Sample Table
     Total number of samples: {np}
     """
-    #def switch_s_expander():
-    #    st.session_state.sample_ex_switch = not st.session_state.sample_ex_switch
-
-    #sample_ex = st.expander("sample_expander",
-    #        expanded = st.session_state.sample_ex_switch
-    #)
-    #clicked = sample_ex.button("View & Edit Samples", on_click=switch_s_expander)
-    #with sample_ex:
     with st.expander("Working Samples"):
 
         buffer = io.StringIO()
@@ -386,7 +330,9 @@ with right_s:
         st.text(s)
 
         p_q = st.session_state.queries
-        st.dataframe(p_q[p_q["dimension"]=="peptide"].drop("dimension",axis=1,inplace=False))
+        st.write(
+            p_q[p_q["dimension"]=="peptide"].drop("dimension",axis=1,inplace=False)
+        )
 
         """
         **Tell me more about** :point_down:
@@ -454,7 +400,6 @@ Here, you can select options for rendering a heatmap based upon the samples-pept
 
 settings, viz = st.columns([1,3])
 
-#with st.expander("Heatmap settings"):
 with settings:
     with st.form("dt"):
 
@@ -501,8 +446,6 @@ with settings:
         if adv == "On":
             y_choices += list(ds.peptide_metadata.values)
 
-        #if "patient_status" in y_choices:
-        #    index=y_choices.index("patient_status") + 1
         y = st.selectbox(
             "y-axis sample feature",
             ["sample_id"] + y_choices,
@@ -515,9 +458,6 @@ with settings:
     
         index=0
         x_choices = list(ds.peptide_metadata.values)
-        #if "Protein" in x_choices:
-        #    index=x_choices.index("Protein") + 1
-
 
         if adv == "On":
             x_choices += list(ds.sample_metadata.values)
@@ -554,17 +494,14 @@ with settings:
         **Split groups** Split the vizualization into groups (subplots).
         """
 
-        #index=0
         r_s = get_reasonable_features(st.session_state.sample_table)
         r_p = get_reasonable_features(st.session_state.peptide_table)
         facet_choices = r_s + r_p
-        #print(facet_choices)
         
         facet_features = st.multiselect(
             "Facet feature",
             ["None"] + facet_choices,
         )
-        #print(facet_features)
 
         centered = st.radio(
                 "centered at 0", 
@@ -574,17 +511,13 @@ with settings:
     
         domain_max = st.number_input("domain max")
         domain_min = st.number_input("domain min")
-        #zmid = st.button("zero centered color")
 
         save_dir = st.text_input(label=f"save directory")
 
-        #domain_max = st.number_input("domain max")
         heatmap_render = st.form_submit_button("Render Heatmap")
 
 with viz:
     if heatmap_render:
-        # TODO, we'll want to check the axis they've chosen
-        # are unique or throw a warning??
         yss = [y] if y != 'sample_id' else []
         xss = [x] if x != 'peptide_id' else []
         sm, pm = [], []
@@ -595,9 +528,6 @@ with viz:
             else:
                 pm.append(f)
 
-        #print(f"sample metadata: {sm}")
-        #print(f"peptide metadata: {pm}")
-        
         # throw out all things we don't care about before 
         # creating the tall dataframe (quite memory expensive)
         subset_ds = copy.deepcopy(ds.loc[
@@ -611,7 +541,7 @@ with viz:
         for dt in set(list(subset_ds.data_vars)) - keep_tables:
             del subset_ds[dt]
        
-        tds = to_tidy(subset_ds)
+        tds = to_tall(subset_ds)
 
         scale_args = {}
         if domain_max and not domain_min:
@@ -656,11 +586,6 @@ with viz:
                     width=1000,
                     title=title
                 )
-                #base.save("test-plot.png")
-                
-                #if len(facet_features) > 0:
-                    #c = c.facet(row=facet_col_name).resolve_scale(y='independent')
-                    #c = c.facet(row=facet_col_name, title=None)
 
                 st.altair_chart(c, use_container_width=True)
                 if save_dir:
@@ -668,13 +593,7 @@ with viz:
                     group_state = [str(gs) for gs in group_state]
                     if not os.path.exists(save_dir): os.mkdir(save_dir)
                     save(c, os.path.join(save_dir, "-".join(group_state))+".png")
-            #chart = alt.hconcat()
-            #for group, data in  
-            #    chart |= base.transform_filter(
-            #            datum.species == species
-            #    )
         else:
-
         
             c = alt.Chart(tds).mark_rect().encode(
                 x=alt.X(
