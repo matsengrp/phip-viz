@@ -9,8 +9,10 @@ Please see the
 [documentation](https://matsengrp.github.io/phippery/)
 for further details.
 
-## Docker quickstart
+## Docker quickstart (recommended)
 
 ```
+cd pickle_data/ # a place where .phip binaries exist
+docker run -p 8501:8501 -v $PWD:/app/data/ quay.io/matsengrp/phip-viz
 ```
 
