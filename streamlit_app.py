@@ -164,7 +164,7 @@ with st.sidebar:
     # Upload
     """
     input_file_list = [
-        f"{fp}" for fp in os.listdir(".")
+        f"{fp}" for fp in os.listdir("./data")
         if fp.endswith('.phip')
     ]
     selected_input_file = st.sidebar.selectbox(

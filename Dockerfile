@@ -1,9 +1,9 @@
 # app/Dockerfile
 
-FROM python:3.9-slim
+FROM quay.io/matsengrp/python3.7
 
 EXPOSE 8501
-
+COPY . /app
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
@@ -12,10 +12,6 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/matsengrp/phip-viz.git .
-# COPY streamlit_app.py /app
-# COPY requirements.txt /app
-
 RUN pip3 install -r requirements.txt
 
-# ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"] 
+ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"] 
