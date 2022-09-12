@@ -1,4 +1,5 @@
 streamlit>=0.83.0
+phippery==1.0.6
 watchdog
 altair
 altair_saver
