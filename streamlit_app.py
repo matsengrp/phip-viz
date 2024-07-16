@@ -53,11 +53,11 @@ def id_coordinate_from_query(ds, query_df):
     return sid, pid
 
 
-@st.cache(
-    hash_funcs={
-        xr.core.dataset.Dataset: dask.base.tokenize,
-    }, 
-    suppress_st_warning=True,
+@st.cache_resource(
+    # hash_funcs={
+    #    xr.core.dataset.Dataset: dask.base.tokenize,
+    # }, 
+    # suppress_st_warning=True,
     max_entries=10
 )
 def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
@@ -69,7 +69,7 @@ def load_data(input_file_path: str, df: pd.DataFrame, **kwargs):
         peptide_id=pid
     )]
 
-@st.cache
+@st.cache_data
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8')
 
@@ -194,7 +194,7 @@ with st.sidebar:
         """)
 
     df = copy.deepcopy(st.session_state.queries)
-    ds = load_data(selected_input_file, df)
+    ds = load_data(os.path.join("./data", selected_input_file), df)
     if len(ds.sample_id.values) == 0:
         raise ValueError(f'Condition file resulted in Zero-length sample table')
     if len(ds.peptide_id.values) == 0:
