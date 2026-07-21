@@ -2,11 +2,9 @@
 
 import copy
 import os
-import json
 import io
 
 import altair as alt
-from altair_saver import save
 alt.data_transformers.disable_max_rows()
 import phippery
 from phippery.utils import *
@@ -592,7 +590,7 @@ with viz:
                     group_state = [group] if type(group) != tuple else group
                     group_state = [str(gs) for gs in group_state]
                     if not os.path.exists(save_dir): os.mkdir(save_dir)
-                    save(c, os.path.join(save_dir, "-".join(group_state))+".png")
+                    c.save(os.path.join(save_dir, "-".join(group_state))+".png")
         else:
         
             c = alt.Chart(tds).mark_rect().encode(
